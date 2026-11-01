@@ -151,7 +151,7 @@ Checked:
 - ../.moat/moat-tasks-detail.json ❌
 
 Are you in the correct directory?
-- cd to your project root or demo directory
+- cd to your project root
 - Make sure the Chrome extension is connected to this project
 
 Current directory: [show pwd]

@@ -430,7 +430,6 @@ describe('V2-06: Side panel manifest configuration', () => {
     const manifest = {
       content_scripts: [{
         js: [
-          'html2canvas.min.js',
           'utils/safeStorage.js',
           'utils/persistence.js',
           'utils/taskStore.js',

@@ -153,11 +153,10 @@ Use @moat-auto-fix.md for immediate implementation
 ## 📁 Files
 
 - `manifest.json` - Chrome extension configuration
-- `content_script.js` - Main annotation logic
-- `moat.js` - Sidebar component
-- `moat.css` - All styles
-- `background.js` - Extension icon click handler
-- `html2canvas.min.js` - Screenshot capture library
+- `content_script.js` - Main annotation logic and screenshot cropping
+- `content.css` - Annotation styles
+- `sidepanel/` - Native side panel UI
+- `background.js` - Extension icon click handler and native screenshot capture
 
 ## 🔧 Features
 
@@ -183,7 +182,7 @@ Use @moat-auto-fix.md for immediate implementation
 ### 📁 Project Integration
 - **Drag & Drop**: Reorder annotations by priority
 - **Export**: Download annotations as `.moat.json`
-- **Screenshot Capture**: Automatically captures element screenshots
+- **Screenshot Capture**: Uses Chrome's native `captureVisibleTab` API for element and rectangle screenshots; tasks can still be submitted if capture fails
 - **🆕 Cursor Streaming**: Real-time sync to your project directory
 - **🆕 Markdown Task Reading**: Displays tasks from connected project files
 - **🆕 Claude Code Support**: Automatically deploys `/bridge` command to `.claude/commands/`

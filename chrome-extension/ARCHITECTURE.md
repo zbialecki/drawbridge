@@ -2,7 +2,7 @@
 
 ## 🎯 Core Principle: Dynamic, Not Hardcoded
 
-**Moat is designed to work with ANY project directory the user selects.** There are no hardcoded paths to specific directories like "demo-page" or "start-here".
+**Moat is designed to work with ANY project directory the user selects.** There are no hardcoded paths to specific project directories.
 
 ## 📊 System Architecture
 
@@ -10,7 +10,7 @@
 ```
 Chrome Extension (chrome-extension/)
 ├── manifest.json          # Extension configuration
-├── background.js          # Extension icon click handler
+├── background.js          # Extension icon click handler and native screenshot capture
 ├── content_script.js      # Main logic (injected into every page)
 ├── moat.js               # UI sidebar and visual components
 └── utils/
@@ -106,6 +106,12 @@ for (const [filename, content] of Object.entries(templates)) {
 await window.directoryHandle.getFileHandle('moat-tasks.md', { create: true });
 await window.directoryHandle.getFileHandle('moat-tasks-detail.json', { create: true });
 ```
+
+### **Screenshot Capture**
+
+Both element (`C`) and rectangle (`R`) annotations use Chrome's native `captureVisibleTab` API exclusively. The content script sends `CAPTURE_SCREENSHOT` to `background.js`, which returns a viewport PNG without parsing or rendering the page DOM.
+
+The content script crops the image using viewport-relative coordinates, 100 CSS pixels of padding, and `devicePixelRatio` scaling. Visible annotation overlays are included in the capture. PNGs are saved under `.moat/screenshots/` in the connected project. If capture fails, task submission continues without a screenshot.
 
 ## 🐛 Troubleshooting Guide
 

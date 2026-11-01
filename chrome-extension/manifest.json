@@ -25,7 +25,6 @@
     {
       "matches": ["<all_urls>"],
       "js": [
-        "html2canvas.min.js",
         "utils/safeStorage.js",
         "utils/persistence.js",
         "utils/buildInfo.js",
@@ -42,16 +41,18 @@
   "action": {
     "default_title": "Drawbridge",
     "default_icon": {
-      "16": "icons/drawbridge-icon-light-16.png",
-      "48": "icons/drawbridge-icon-light-48.png",
-      "128": "icons/drawbridge-icon-light-128.png"
+      "16": "icons/drawbridge-feedback-16.png",
+      "32": "icons/drawbridge-feedback-32.png",
+      "48": "icons/drawbridge-feedback-48.png",
+      "128": "icons/drawbridge-feedback-128.png"
     }
   },
   "icons": {
-    "16": "icons/drawbridge-icon-light-16.png",
-    "48": "icons/drawbridge-icon-light-48.png",
-    "128": "icons/drawbridge-icon-light-128.png",
-    "512": "icons/drawbridge-icon-light-512.png"
+    "16": "icons/drawbridge-feedback-16.png",
+    "32": "icons/drawbridge-feedback-32.png",
+    "48": "icons/drawbridge-feedback-48.png",
+    "128": "icons/drawbridge-feedback-128.png",
+    "512": "icons/drawbridge-feedback-512.png"
   },
   "web_accessible_resources": [
     {
@@ -65,4 +66,4 @@
       "matches": ["<all_urls>"]
     }
   ]
-} 
+}

@@ -54,6 +54,8 @@ After adding annotations, open your project in Cursor, Claude Code, Codex, or Wi
 
 Tasks appear in the drawer and sync to your connected project.
 
+Both annotation modes use Chrome's native screenshot capture, cropped around the selection with padding. Screenshots include the visible annotation overlay and are saved as PNG files in `.moat/screenshots/`. If capture fails, you can still submit the task without a screenshot.
+
 ![Drawbridge comment annotation](https://github.com/breschio/drawbridge-media/blob/main/drawbridge-comment-2.gif?raw=true)
 
 ![Drawbridge rectangle annotation](https://github.com/breschio/drawbridge-media/raw/main/drawbridge-rectangle.gif)

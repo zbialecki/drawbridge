@@ -79,7 +79,7 @@ function copyDirectory(src, dest, stats = { files: 0, dirs: 0, excluded: 0 }) {
 function createZipFile(sourceDir, outputPath) {
   const command = process.platform === 'win32'
     ? `powershell Compress-Archive -Path "${sourceDir}\\*" -DestinationPath "${outputPath}" -Force`
-    : `cd "${sourceDir}" && zip -r "${outputPath}" . -x "*.DS_Store"`;
+    : `cd "${sourceDir}" && zip -r -FS "${outputPath}" . -x "*.DS_Store"`;
 
   try {
     execSync(command, { stdio: 'inherit' });

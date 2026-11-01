@@ -1,7 +1,7 @@
 /**
  * Drawbridge V2 Manual Test via Puppeteer
  * 
- * Tests the extension loaded in Chromium with the demo site.
+ * Tests the extension loaded in Chromium with a self-contained test page.
  * Some features (Side Panel, File System Access) can't be fully automated
  * but we can verify extension loading, content script injection, and UI behavior.
  */
@@ -12,7 +12,6 @@ const http = require('http');
 const fs = require('fs');
 
 const EXTENSION_PATH = path.resolve(__dirname, '../../');
-const DEMO_PATH = path.resolve(__dirname, '../../../demo');
 const RESULTS = [];
 
 function log(status, test, detail = '') {
@@ -21,33 +20,28 @@ function log(status, test, detail = '') {
   RESULTS.push({ status, test, detail });
 }
 
-// Simple static file server for demo site
-function startDemoServer() {
+// Self-contained page for extension injection and UI checks.
+function startTestServer() {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
-      let filePath = path.join(DEMO_PATH, req.url === '/' ? 'index.html' : req.url);
-      const ext = path.extname(filePath);
-      const mimeTypes = {
-        '.html': 'text/html',
-        '.css': 'text/css',
-        '.js': 'application/javascript',
-        '.png': 'image/png',
-        '.svg': 'image/svg+xml'
-      };
-      
-      fs.readFile(filePath, (err, data) => {
-        if (err) {
-          res.writeHead(404);
-          res.end('Not found');
-          return;
-        }
-        res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'text/plain' });
-        res.end(data);
-      });
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(`<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Drawbridge Test Page</title></head>
+<body>
+  <nav><a href="#content">Content</a></nav>
+  <main id="content">
+    <h1>Drawbridge Test Page</h1>
+    <p>This self-contained page verifies extension loading, content script injection,
+      and user interface behavior without external assets or a separate project.</p>
+    <button type="button">Test button</button>
+  </main>
+</body>
+</html>`);
     });
     
     server.listen(3456, () => {
-      console.log('🌐 Demo server running on http://localhost:3456\n');
+      console.log('🌐 Test server running on http://localhost:3456\n');
       resolve(server);
     });
   });
@@ -57,9 +51,8 @@ async function run() {
   console.log('🚀 Drawbridge V2 Manual Test Suite');
   console.log('='.repeat(60));
   console.log(`Extension: ${EXTENSION_PATH}`);
-  console.log(`Demo site: ${DEMO_PATH}\n`);
 
-  const server = await startDemoServer();
+  const server = await startTestServer();
 
   let browser;
   try {
@@ -154,11 +147,11 @@ async function run() {
         });
         await new Promise(r => setTimeout(r, 1000));
 
-        // Query for the demo tab by URL — not "active tab" which would be this side panel page
+        // Query for the test tab by URL — not "active tab" which would be this side panel page
         const contentScriptReady = await spPage.evaluate(async () => {
           try {
             const tabs = await chrome.tabs.query({ url: 'http://localhost:3456/*' });
-            if (!tabs.length) return { ready: false, reason: 'demo tab not found' };
+            if (!tabs.length) return { ready: false, reason: 'test tab not found' };
 
             return new Promise((resolve) => {
               chrome.tabs.sendMessage(tabs[0].id, { action: 'ping' }, (response) => {
@@ -189,7 +182,7 @@ async function run() {
 
     // === TEST 4: Content script handles GET_CONNECTION_STATUS ===
     // Verify the content script handles V2 message types correctly.
-    // Query demo tab by URL (not active tab — that would be the side panel page).
+    // Query test tab by URL (not active tab — that would be the side panel page).
     try {
       if (extensionId) {
         const spPage = await browser.newPage();
@@ -201,7 +194,7 @@ async function run() {
         const statusResult = await spPage.evaluate(async () => {
           try {
             const tabs = await chrome.tabs.query({ url: 'http://localhost:3456/*' });
-            if (!tabs.length) return { success: false, reason: 'demo tab not found' };
+            if (!tabs.length) return { success: false, reason: 'test tab not found' };
 
             return new Promise((resolve) => {
               chrome.tabs.sendMessage(tabs[0].id, { type: 'GET_CONNECTION_STATUS' }, (response) => {
@@ -509,24 +502,24 @@ async function run() {
       log('FAIL', 'T12: Tools menu', e.message);
     }
 
-    // === TEST 13: Demo site renders correctly ===
+    // === TEST 13: Test page renders correctly ===
     try {
-      const demoCheck = await page.evaluate(() => {
+      const pageCheck = await page.evaluate(() => {
         return {
           title: document.title,
-          hasHero: !!document.querySelector('h1'),
+          hasHeading: !!document.querySelector('h1'),
           hasNav: !!document.querySelector('nav'),
           bodyText: document.body?.innerText?.length || 0
         };
       });
       
-      if (demoCheck.bodyText > 100) {
-        log('PASS', 'T13: Demo site renders correctly', `Title: ${demoCheck.title}, Body: ${demoCheck.bodyText} chars`);
+      if (pageCheck.bodyText > 100) {
+        log('PASS', 'T13: Test page renders correctly', `Title: ${pageCheck.title}, Body: ${pageCheck.bodyText} chars`);
       } else {
-        log('FAIL', 'T13: Demo site rendering', JSON.stringify(demoCheck));
+        log('FAIL', 'T13: Test page rendering', JSON.stringify(pageCheck));
       }
     } catch (e) {
-      log('FAIL', 'T13: Demo site rendering', e.message);
+      log('FAIL', 'T13: Test page rendering', e.message);
     }
 
     // === TEST 14: Background service worker active ===
@@ -547,7 +540,7 @@ async function run() {
       log('FAIL', 'T14: Background service worker', e.message);
     }
 
-    // === TEST 15: No console errors on demo page ===
+    // === TEST 15: No console errors on test page ===
     try {
       const newPage = await browser.newPage();
       const consoleErrors = [];
@@ -568,7 +561,7 @@ async function run() {
       );
       
       if (realErrors.length === 0) {
-        log('PASS', 'T15: No console errors on demo page');
+        log('PASS', 'T15: No console errors on test page');
       } else {
         log('FAIL', 'T15: Console errors detected', realErrors.join(' | '));
       }
