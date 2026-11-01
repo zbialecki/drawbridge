@@ -434,6 +434,7 @@ describe('V2-06: Side panel manifest configuration', () => {
           'utils/persistence.js',
           'utils/taskStore.js',
           'utils/markdownGenerator.js',
+          'utils/annotationStore.js',
           'utils/migrateLegacyFiles.js',
           'content_script.js'
           // NO moat.js - it's been replaced by sidepanel/

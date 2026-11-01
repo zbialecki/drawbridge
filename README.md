@@ -36,10 +36,10 @@ For local `file://` pages, open the Drawbridge extension details in Chrome and e
 1. Open the app or page you want to annotate.
 2. Click the Drawbridge toolbar icon.
 3. Click Connect Project in the drawer.
-4. Select the local project root for that app.
+4. Select the folder where you want annotation folders saved. Choose the app's project root if you also want `/bridge` installed there.
 5. Approve Chrome's file access prompt.
 
-Drawbridge creates and maintains files in your project so your AI tool can read the work queue.
+Drawbridge saves each annotation in its own timestamped subfolder directly inside the selected folder. It does not create a hidden `.moat` folder for new annotations.
 
 ### 3. Process The Queue
 
@@ -54,7 +54,7 @@ After adding annotations, open your project in Cursor, Claude Code, Codex, or Wi
 
 Tasks appear in the drawer and sync to your connected project.
 
-Both annotation modes use Chrome's native screenshot capture, cropped around the selection with padding. Screenshots include the visible annotation overlay and are saved as PNG files in `.moat/screenshots/`. If capture fails, you can still submit the task without a screenshot.
+Both annotation modes use Chrome's native screenshot capture, cropped around the selection with padding. Screenshots include the visible annotation overlay and are saved beside each annotation's comment and metadata. If capture fails, you can still submit the task without a screenshot.
 
 ![Drawbridge comment annotation](https://github.com/breschio/drawbridge-media/blob/main/drawbridge-comment-2.gif?raw=true)
 
@@ -90,17 +90,26 @@ Supported modes:
 
 ## Generated Files
 
-Drawbridge writes these into the connected project:
+Each annotation is saved directly in the selected folder:
 
-- `.moat/moat-tasks.md`: human-readable task list.
-- `.moat/moat-tasks-detail.json`: structured task data for AI processing.
-- `.moat/screenshots/`: screenshots captured with annotations.
-- `.moat/drawbridge-workflow.md`: agent workflow instructions.
-- `.claude/commands/bridge.md`: Claude Code slash command.
-- `.windsurf/workflows/bridge.md`: Windsurf workflow.
-- `.codex/prompts/bridge.md`: Codex prompt.
+```text
+selected-folder/
+├── 26-11-01 15-42/
+│   ├── screenshot.png
+│   ├── comment.md
+│   ├── metadata.json
+│   └── reference-1.png   # Only when an image was pasted
+└── 26-11-01 15-42_2/
+    ├── screenshot.png
+    ├── comment.md
+    └── metadata.json
+```
 
-Drawbridge also updates `.gitignore` for generated local workflow folders.
+Folder names use local time in `YY-MM-DD HH-mm` format. Conflicts get `_2`, `_3`, and so on. `comment.md` contains the full comment and status; `metadata.json` contains one annotation, including its page URL, selector, geometry, status, and image paths relative to that folder. A failed capture simply omits `screenshot.png`. Failed file writes keep the editor open for retry.
+
+Existing `.moat` annotations remain readable in place; they are not automatically moved or deleted. New folders are not automatically git-ignored.
+
+Drawbridge also installs `.claude/commands/bridge.md`, `.windsurf/workflows/bridge.md`, and `.codex/prompts/bridge.md` in the selected folder, and adds those workflow directories to an existing `.gitignore`. If annotations are saved outside your code project, tell your AI tool where that output folder is.
 
 ## Development
 
@@ -112,12 +121,14 @@ npm run build
 
 The build output is written to `dist/drawbridge-v<version>.zip`.
 
+For the optional clipboard watcher, run `node /path/to/drawbridge/scripts/moat-watcher.js` from the selected output folder (or `npm run watch` when it is this repository's root). It reads timestamped annotations and keeps a `watcher.json` receipt inside each copied annotation's folder.
+
 ## Troubleshooting
 
 - If the icon does nothing after reloading the extension, click it once on the page again. Drawbridge now injects missing scripts into existing tabs.
 - If the drawer looks stale, close and reopen it with the toolbar icon.
 - If project files are missing, reconnect the project from the drawer.
-- If an AI tool cannot find tasks, confirm the project contains `.moat/moat-tasks.md` and `.moat/moat-tasks-detail.json`.
+- If an AI tool cannot find tasks, point it to the selected output folder and its timestamped subfolders containing `metadata.json` and `comment.md`.
 
 ## License
 

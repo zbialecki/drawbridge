@@ -1,34 +1,34 @@
 const fs = require('fs');
 const vm = require('vm');
+const { AnnotationStore } = require('./utils/annotationStore');
+const { directoryFixture } = require('./tests/directory-handle');
 const source = fs.readFileSync(require.resolve('./content_script.js'), 'utf8');
 const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
+let fixture;
 function setup(failure) {
-  const writes = [];
-  const writable = { write: jest.fn(async blob => writes.push(blob)), close: jest.fn(async () => {}) };
-  const directory = { getFileHandle: jest.fn(async () => {
-    if (failure === 'file') throw new Error('File write denied');
-    return { createWritable: async () => writable };
-  }) };
-  const save = jest.fn(async () => true);
-  const context = vm.createContext({ window: { directoryHandle: failure === 'disconnected' ? null : {
-    getDirectoryHandle: async () => {
-      if (failure === 'directory') throw new Error('Directory permission denied');
-      return directory;
-    }
-  } }, atob, Blob, Uint8Array, console: { log() {}, error() {} },
-  canUseNewTaskSystem: () => true, saveAnnotationWithNewSystem: save, showNotification: jest.fn() });
-  vm.runInContext(section('  async function savePastedImagesToFiles(', '  // Wire clipboard-image paste'), context);
+  fixture = directoryFixture();
+  if (failure === 'file') fixture.state.failWrite = 'reference-1.png';
+  if (failure === 'directory') fixture.directory.getDirectoryHandle = async () => { throw new Error('Directory permission denied'); };
+  const taskStore = new AnnotationStore();
+  taskStore.initialize(fixture.directory);
+  const save = jest.fn(async annotation => taskStore.saveAnnotation(annotation, { title: 'Button', comment: annotation.content }));
+  const context = vm.createContext({ window: { directoryHandle: failure === 'disconnected' ? null : fixture.directory },
+    taskStore, console: { log() {}, error() {} }, Date,
+    saveAnnotationWithNewSystem: save, showNotification: jest.fn() });
+  vm.runInContext(section('  async function submitCommentAnnotation(', '  // Wire clipboard-image paste'), context);
   vm.runInContext(section('  async function addToQueue(', '  // Get user-friendly element label'), context);
   const button = { disabled: false };
   const box = { pastedImages: ['data:image/png;base64,eA=='], querySelector: () => button };
-  const annotation = { id: 'test', content: 'Keep this comment', pastedImages: box.pastedImages };
-  return { context, button, box, annotation, writes, save };
+  const annotation = { id: 'test', content: 'Keep this comment', pastedImages: box.pastedImages,
+    timestamp: new Date(2026, 10, 1, 15, 42).getTime() };
+  return { context, button, box, annotation, save, taskStore };
 }
+afterEach(() => { fixture?.cleanup(); });
 
 test.each(['directory', 'file', 'disconnected'])('retains editable draft on %s failure', async failure => {
-  const { context, box, button, annotation, save } = setup(failure);
+  const { context, box, button, annotation, taskStore } = setup(failure);
   expect(await context.submitCommentAnnotation(box, annotation)).toBe(false);
-  expect(save).not.toHaveBeenCalled();
+  expect(taskStore.tasks).toHaveLength(0);
   expect(annotation.content).toBe('Keep this comment');
   expect(box.pastedImages).toEqual(['data:image/png;base64,eA==']);
   expect(button.disabled).toBe(false);
@@ -36,12 +36,24 @@ test.each(['directory', 'file', 'disconnected'])('retains editable draft on %s f
   expect(context.showNotification).toHaveBeenCalledWith(expect.stringContaining('retry'), 'error');
 });
 
-test('saves the image before saving its task reference', async () => {
-  const { context, box, annotation, writes, save } = setup();
+test('saves pasted images beside their comment and metadata', async () => {
+  const { context, box, annotation, save, taskStore } = setup();
   expect(await context.submitCommentAnnotation(box, annotation)).toBe(true);
-  expect(writes).toHaveLength(1);
-  expect(annotation.attachments).toEqual(['./screenshots/test-paste-1.png']);
+  const task = taskStore.tasks[0];
+  expect(fixture.read(`${task.folderName}/reference-1.png`)).toBe('x');
+  expect(JSON.parse(fixture.read(`${task.folderName}/metadata.json`)).attachments).toEqual(['./reference-1.png']);
   expect(save).toHaveBeenCalledWith(annotation);
+});
+
+test('a retry in a later minute keeps the original annotation folder', async () => {
+  const { context, box, annotation, taskStore } = setup('file');
+  expect(await context.submitCommentAnnotation(box, annotation)).toBe(false);
+  fixture.state.failWrite = null;
+  const retry = { id: annotation.id, content: annotation.content, pastedImages: box.pastedImages,
+    timestamp: annotation.timestamp + 60000 };
+  expect(await context.submitCommentAnnotation(box, retry)).toBe(true);
+  expect(taskStore.tasks[0].folderName).toBe('26-11-01 15-42');
+  expect(fixture.exists('26-11-01 15-43')).toBe(false);
 });
 
 test('prevents duplicate submissions during an outstanding save', async () => {

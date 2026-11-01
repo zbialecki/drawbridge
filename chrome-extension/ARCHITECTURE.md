@@ -1,168 +1,59 @@
-# 🏗 Moat Architecture Documentation
+# Drawbridge Architecture
 
-## 🎯 Core Principle: Dynamic, Not Hardcoded
+## Extension Modules
 
-**Moat is designed to work with ANY project directory the user selects.** There are no hardcoded paths to specific project directories.
+- `background.js` opens the native side panel, ensures the content script is available, and handles native screenshot capture.
+- `content_script.js` owns annotation interaction, native-image cropping, folder connection, and the message interface used by the side panel.
+- `sidepanel/` displays tasks and sends commands to the content script. It does not hold filesystem handles.
+- `utils/annotationStore.js` owns the saved annotation layout: folder naming, complete saves, discovery, updates, image reads, and deletion.
+- `utils/persistence.js` stores the selected directory handle in IndexedDB and checks browser permissions on restoration.
+- `utils/taskStore.js` and `utils/markdownGenerator.js` support existing `.moat` projects.
 
-## 📊 System Architecture
+## Storage
 
-### **1. Chrome Extension Layer**
-```
-Chrome Extension (chrome-extension/)
-├── manifest.json          # Extension configuration
-├── background.js          # Extension icon click handler and native screenshot capture
-├── content_script.js      # Main logic (injected into every page)
-├── moat.js               # UI sidebar and visual components
-└── utils/
-    ├── taskStore.js      # Task data management
-    ├── markdownGenerator.js # Markdown file generation
-    └── migrateLegacyFiles.js # Legacy file migration
-```
+The folder selected by the user is the output root. New annotations are individual subfolders named with local time, `YY-MM-DD HH-mm`. Collisions use `_2`, `_3`, etc.
 
-### **2. File System Integration**
-```
-User Project Directory (ANY name)
-└── .moat/                    # Created dynamically
-    ├── config.json           # Project-specific settings
-    ├── moat-tasks.md         # Human-readable task list
-    ├── moat-tasks-detail.json # Machine-readable task data
-    ├── drawbridge-workflow.md # Unified AI workflow rule (deployed automatically)
-    ├── README.md             # Project-specific guide (deployed automatically)
-    └── screenshots/          # Task screenshots (created as needed)
+```text
+selected-folder/
+└── 26-11-01 15-42/
+    ├── screenshot.png
+    ├── comment.md
+    ├── metadata.json
+    └── reference-1.png
 ```
 
-### **3. Connection Flow**
-```
-1. User presses Cmd+Shift+P
-2. Browser shows directory picker (File System Access API)
-3. User selects ANY project directory
-4. Extension creates .moat/ subdirectory
-5. Extension deploys rule templates automatically
-6. Extension stores directory handle in memory
-7. All operations use relative paths within selected directory
-```
+`metadata.json` contains one task object identified by `format: "drawbridge-annotation"`. It preserves the annotation's ID, full comment, timestamp, status, URL, element context, click position, crop information, and bounding geometry. Screenshot and attachment paths are relative to this metadata file. The store prefixes paths with the annotation folder when returning tasks to the panel, so image reads remain rooted at the selected handle.
 
-## 🔄 Connection Lifecycle
+`comment.md` is a readable mirror containing the full comment, a status checkbox, and image links. Screenshots are optional; pasted references remain separate files in the same folder.
 
-### **Connection Establishment**
-1. **User Action**: Presses `Cmd+Shift+P` or clicks extension icon
-2. **Directory Selection**: File System Access API shows directory picker
-3. **Project Setup**: Creates `.moat/` directory in selected location
-4. **Rule Deployment**: Copies embedded rule templates to project
-5. **Handle Storage**: Stores directory handle in `window.directoryHandle`
+### Save and retry
 
-### **Connection Persistence**
-❗ **CRITICAL LIMITATION**: Directory handles cannot persist across browser sessions due to browser security.
+The store claims `metadata.json` with an exclusive writable stream before writing assets. This prevents simultaneous tabs from choosing the same folder. Images and the comment are written first; metadata is published last, so incomplete saves are not listed as completed annotations. Retries keep the annotation ID and original timestamp, find the same folder, and do not duplicate a successful save.
 
-**Connection Lost When**:
-- Browser restarts
-- Extension updates
-- Browser data cleared
-- Project directory renamed/moved
+Write failures propagate to the editor, which retains the draft and references for retry. Capture failure is different: the annotation is saved normally without a screenshot.
 
-**Connection Preserved During**:
-- Page refreshes
-- Tab switching
-- Extension icon clicks
+Status updates re-read the annotation's metadata, preserve unrelated fields, and update the same metadata/comment files. Deletion checks the folder name, metadata format, and task ID before removing the annotation folder. Image paths are checked before filesystem traversal. Clearing screenshots removes only capture images, not pasted references.
 
-### **Reconnection Process**
-1. **Detection**: Extension detects missing directory handle
-2. **User Prompt**: Shows reconnection notification
-3. **Re-selection**: User selects project directory again
-4. **Auto-repair**: Extension re-deploys rule templates if missing
+### Existing projects
 
-## 🔧 Technical Implementation
+The store also reads an existing `.moat/moat-tasks-detail.json` array without creating a `.moat` directory or rewriting old files during connection. Legacy images remain relative to that directory. Explicit changes to a legacy task use the existing task store and checklist generator. New annotations always use timestamped folders in the output root.
 
-### **Directory Handle Management**
-```javascript
-// Dynamic directory selection
-const dirHandle = await window.showDirectoryPicker();
+There is no new shared JSON index or markdown checklist at the root, and connecting must not overwrite project files such as `README.md` or `config.json`.
 
-// Dynamic .moat directory creation
-const moatDir = await dirHandle.getDirectoryHandle('.moat', { create: true });
+## Connection and Permissions
 
-// Store handle for all operations
-window.directoryHandle = moatDir; 
-```
+The content script calls `showDirectoryPicker({ mode: 'readwrite' })` and retains that selected handle directly. IndexedDB persistence stores the same root handle. Restoring a connection queries permissions and verifies directory access without creating files. If Chrome needs permission again, the extension prompts the user to reconnect through a user action.
 
-### **Rule Template Deployment**
-```javascript
-// Templates are embedded in extension code
-const templates = {
-  'drawbridge-workflow.md': `# Drawbridge Workflow: Complete Rules...`,
-  'README.md': `# Moat - Connected to ${dirHandle.name}...`
-};
+Connecting installs `/bridge` prompts under `.claude/commands/`, `.windsurf/workflows/`, and `.codex/prompts/` in the selected folder. Only those tool directories are added to an existing `.gitignore`; annotation folders are not automatically ignored. A separate output folder may be outside the code project, so the user must point their AI tool to it.
 
-// Deploy to ANY project directory
-for (const [filename, content] of Object.entries(templates)) {
-  const fileHandle = await moatDir.getFileHandle(filename, { create: true });
-  // ... write content
-}
-```
+## Native Screenshot Capture
 
-### **Task File Operations**
-```javascript
-// All paths are relative to connected directory
-await window.directoryHandle.getFileHandle('moat-tasks.md', { create: true });
-await window.directoryHandle.getFileHandle('moat-tasks-detail.json', { create: true });
-```
+Both element (`C`) and rectangle (`R`) annotations send `CAPTURE_SCREENSHOT` to the service worker. Chrome's `captureVisibleTab` returns a viewport PNG without a DOM-rendering library. The content script crops it with viewport-relative coordinates, 100 CSS pixels of padding, and `devicePixelRatio` scaling. Visible annotation overlays are part of the captured image.
 
-### **Screenshot Capture**
+## Portable Folder Names
 
-Both element (`C`) and rectangle (`R`) annotations use Chrome's native `captureVisibleTab` API exclusively. The content script sends `CAPTURE_SCREENSHOT` to `background.js`, which returns a viewport PNG without parsing or rendering the page DOM.
+The time separator is a hyphen because Chrome's File System Access API rejects colons in local folder names, even on macOS. All generated names use `YY-MM-DD HH-mm` plus an optional collision index.
 
-The content script crops the image using viewport-relative coordinates, 100 CSS pixels of padding, and `devicePixelRatio` scaling. Visible annotation overlays are included in the capture. PNGs are saved under `.moat/screenshots/` in the connected project. If capture fails, task submission continues without a screenshot.
+## Verification
 
-## 🐛 Troubleshooting Guide
-
-### **"Tasks not saving"**
-**Cause**: No project connected  
-**Solution**: Press `Cmd+Shift+P` to connect project
-
-### **"AI can't find tasks"**
-**Cause**: Rule templates not deployed  
-**Solution**: Reconnect project (auto-deploys templates)
-
-### **"Connection lost after browser restart"**
-**Cause**: Browser security limitation  
-**Solution**: This is normal - reconnect project
-
-### **"Project renamed, extension broken"**
-**Cause**: Directory handle invalidated  
-**Solution**: Reconnect to renamed project directory
-
-### **Diagnostic Commands**
-```javascript
-// Check connection status
-window.directoryHandle ? "Connected" : "Not Connected"
-
-// Full system diagnosis  
-window.moatDebug.diagnoseConnection()
-
-// Check system health
-window.moatDebug.checkSystemStatus()
-```
-
-## ✅ Key Points for Developers
-
-1. **No Hardcoded Paths**: Extension works with any directory name
-2. **Dynamic Rule Deployment**: Templates embedded and deployed automatically  
-3. **Connection Required**: User must reconnect after browser restart
-4. **Relative Operations**: All file operations use directory handles
-5. **Graceful Fallbacks**: Multiple save mechanisms for reliability
-
-## 🚀 Best Practices
-
-### **For Users**
-- Connect once per browser session
-- Keep project directory name stable
-- Use diagnostic tools when issues occur
-- Bookmark localhost URLs
-
-### **For Developers**
-- Never hardcode directory names
-- Always check connection before file operations
-- Provide clear reconnection prompts
-- Test with various project directory names
-
-This architecture ensures Moat works reliably with any project structure while maintaining security and user control. 
+`utils/annotationStore.test.js` exercises real temporary files through directory-handle mocks, including naming, same-minute collisions, simultaneous saves, retries, metadata preservation, existing-project reads, image paths, updates, and deletion. Content-script tests cover editor retention and side-panel operations. Real Chrome permission prompts and screenshot rendering still require browser verification.

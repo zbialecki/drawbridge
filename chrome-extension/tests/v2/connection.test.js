@@ -261,7 +261,7 @@ describe('JTBD-06: System restores connection from IndexedDB on page load', () =
 
     expect(restored.success).toBe(true);
     expect(restored.path).toBe('test-project');
-    expect(restored.moatDirectory).toBeTruthy();
+    expect(restored.directoryHandle).toBe(dirHandle);
   });
 
   it('should return failure when no connection stored', async () => {

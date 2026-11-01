@@ -1,313 +1,73 @@
-# Moat Chrome Extension
+# Drawbridge Chrome Extension
 
-A Chrome extension for visually annotating React/Next.js applications during development with **ai-dev-tasks integration** for structured task processing.
+Annotate a running page and save each comment, screenshot, and metadata together for an AI coding assistant.
 
-## ✨ New Enhanced Features
+## Setup
 
-- 🎯 **Smart Priority Classification**: Auto-detects High (🔥), Medium (⚡), Low (💡) priority
-- 📋 **Task Type Detection**: Automatically categorizes as Styling, Layout, Content, or Enhancement
-- ⏱️ **Time Estimation**: Predicts implementation time (2-20 minutes)
-- 🧠 **Implementation Planning**: Suggests approach and files to modify
-- 🔗 **Dependency Detection**: Identifies related tasks affecting same elements
-- 📊 **Progress Tracking**: Rich metadata and status tracking
-- 🤖 **ai-dev-tasks Integration**: Structured workflow with human verification
+1. Open `chrome://extensions`, enable Developer mode, and load this directory unpacked.
+2. Pin Drawbridge and open the page you want to annotate.
+3. Click the extension icon, then **Connect Project**, and select an output folder.
+4. Approve browser file access. The selected folder is used directly; new annotations do not go in `.moat`.
 
-## 🚀 Quick Setup
+Choose your code project's root to install `/bridge` commands there. If you choose another output folder, tell your AI tool where to find it. For `file://` pages, enable **Allow access to file URLs** in the extension's details.
 
-1. **Generate Icons** (first time only):
-   - Open `generate-icons.html` in a browser
-   - Right-click each canvas and save as:
-     - `icons/moat-16.png`
-     - `icons/moat-48.png`
-     - `icons/moat-128.png`
+## Annotate
 
-2. **Install Extension**:
-   - Open Chrome and go to `chrome://extensions`
-   - Enable "Developer mode" (top right)
-   - Click "Load unpacked"
-   - Select the `chrome-extension` directory
+- `C`: select an element and leave a comment. Ctrl+Click drills through nested elements.
+- `R`: draw a rectangle and leave a comment.
+- Paste images into the editor to attach design references.
+- `Enter`: submit; `Shift+Enter`: a newline; `Esc`: cancel.
 
-3. **Start Using**:
-   - Navigate to your React/Next.js app (works on any URL)
-   - Press `f` to enter comment mode
-   - Click any element to annotate (including containers and backgrounds)
-   - View annotations in the Moat sidebar
+Both modes use Chrome's native `captureVisibleTab` API. The content script crops the viewport image around the selection with padding and high-DPI scaling. A capture failure still allows submission without a screenshot. File-write failures keep the comment and pasted images available for retry.
 
-## 🔌 Cursor Integration - Stream Annotations
+## Saved Files
 
-Moat can automatically stream annotations to your project for Cursor to pick up:
-
-### Setup (One-time per project)
-
-1. **Open the Moat** - Click the Moat extension icon
-2. **Connect Project** - Click "Connect Project" button
-3. **Select Folder** - Choose your project root directory
-4. **Done!** - Moat creates `.moat/` directory and starts streaming
-
-### What Happens
-
-- Creates `.moat/config.json` - Project settings
-- Creates `.moat/.moat-stream.jsonl` - Live annotation stream
-- Adds `.moat-stream.jsonl` to `.gitignore` automatically
-- Shows green dot when connected 🟢
-
-### Stream Format
-
-Each annotation is appended to `.moat/.moat-stream.jsonl` as a new line:
-
-```json
-{
-  "timestamp": 1234567890,
-  "annotation": { /* full annotation object */ },
-  "formatting": {
-    "cursorPrompt": "Fix this UI issue:\nElement: Link: Profile\nIssue: Move to bottom\nSelector: a[href='/profile']\nURL: http://localhost:3000",
-    "targetFile": "src/pages/index.tsx"
-  }
-}
+```text
+selected-folder/
+├── 26-11-01 15-42/
+│   ├── screenshot.png
+│   ├── comment.md
+│   ├── metadata.json
+│   └── reference-1.png
+└── 26-11-01 15-42_2/
+    ├── screenshot.png
+    ├── comment.md
+    └── metadata.json
 ```
 
-### Enhanced Task Format
+Names use local time: `YY-MM-DD HH-mm`. Additional annotations in that minute get `_2`, `_3`, etc., without overwriting an existing annotation.
 
-Moat now generates **ai-dev-tasks inspired** markdown files at `.moat/moat-tasks.md`:
+- `metadata.json` is one object with `format: "drawbridge-annotation"`, a stable ID, full comment, status, timestamp, page URL, element context, geometry, and relative image paths.
+- `comment.md` contains the full comment, image links, and `[ ]`, `[~]`, or `[x]` for `to do`, `doing`, or `done`.
+- `screenshot.png` is present only if capture succeeded.
+- `reference-N.ext` files are present only when images were pasted.
 
-```markdown
-# Moat Tasks - Local Development
+The side panel reloads these folders and writes status changes to their existing files. Deleting an annotation deletes its folder and associated images. **Clear Screenshots** removes screenshots but preserves comments and pasted reference images.
 
-**Generated**: 2024-01-15T10:30:00.000Z
-**Total Tasks**: 1
-**Status**: pending
-**Last Updated**: 2024-01-15T10:30:00.000Z
+Existing `.moat/moat-tasks-detail.json`, checklist, and screenshots are still readable in place. Loading them does not migrate, rewrite, or delete them. New annotations always use the selected folder directly. New annotation folders are not automatically git-ignored.
 
-Generated by Moat Chrome Extension
+## Process with an AI Tool
 
----
+Connecting installs the `/bridge` prompt into `.claude/commands/`, `.windsurf/workflows/`, and `.codex/prompts/` under the selected folder. It does not overwrite the project's README or create shared task indexes.
 
-## 🔥 📋 Task 001: Navigation Link
+Run `/bridge` or `bridge`, optionally prefixed with `step`, `batch`, or `yolo`. The prompt discovers timestamped annotation folders and reads each metadata object, comment, screenshot, and pasted reference. Status follows `to do` → `doing` → `done`.
 
-**Priority**: High
-**Type**: Layout
-**Estimated Time**: 10 minutes
-**Assigned**: Auto
+## Files
 
-### Request
-"Move this to the bottom, 16px above viewport"
+- `manifest.json`: extension configuration and script ordering.
+- `background.js`: toolbar action and native screenshot capture.
+- `content_script.js`: annotation UI, project connection, and side-panel messages.
+- `content.css`: annotation styles.
+- `sidepanel/`: native side-panel UI.
+- `utils/annotationStore.js`: timestamp naming, per-annotation files, image loading, updates, deletion, and existing-project reads.
+- `utils/taskStore.js` and `utils/markdownGenerator.js`: legacy task/checklist support.
+- `utils/persistence.js`: remembered directory handles and permission checks.
+- `rules-templates/bridge.md`: AI task-processing instructions.
 
-### Technical Details
-- **Element**: `a[href='/profile']`
-- **Location**: styles.css
-- **Component**: Navigation
-- **Page**: http://localhost:3000
+## Troubleshooting
 
-### Implementation Plan
-- **Approach**: Adjust positioning using CSS position, top, left properties
-- **Files to Modify**: styles.css
-- **Dependencies**: None
-- **Testing Notes**: Verify change works across different screen sizes
-
-### Status Tracking
-- **Created**: 2024-01-15T10:30:00.000Z
-- **Status**: 📋 pending
-- **Completed**: Not yet
-- **Applied Changes**: Pending implementation
-- **Verification**: Awaiting processing
-
-### Metadata
-- **ID**: `moat-1705313400000-abc123def`
-- **Session**: moat-session-xyz
-- **Browser**: Chrome Extension
-- **Viewport**: 1920x1080
-
----
-```
-
-### Processing with Cursor
-
-**New ai-dev-tasks Workflow Commands:**
-
-```bash
-# Generate structured tasks from annotations
-Use @generate-moat-tasks.md to analyze .moat/.moat-stream.jsonl
-
-# Process tasks with human verification (recommended)
-Use @drawbridge-workflow.md to implement tasks in .moat/moat-tasks.md
-
-# Legacy auto-processing (no verification)
-Use @moat-auto-fix.md for immediate implementation
-```
-
-### In Cursor
-
-1. Open `.moat/.moat-stream.jsonl` for raw annotations OR `.moat/moat-tasks.md` for structured tasks
-2. Cursor watches for changes
-3. Use **@drawbridge-workflow.md** for intelligent, verified processing
-4. Get human approval for each task before proceeding
-
-## ⌨️ Keyboard Shortcuts
-
-- `f` - Enter comment mode
-- `Esc` - Exit comment mode
-- `Cmd/Ctrl + Shift + F` - Toggle Moat sidebar
-- `Enter` - Submit annotation
-- `Shift + Enter` - New line in annotation
-
-## 📁 Files
-
-- `manifest.json` - Chrome extension configuration
-- `content_script.js` - Main annotation logic and screenshot cropping
-- `content.css` - Annotation styles
-- `sidepanel/` - Native side panel UI
-- `background.js` - Extension icon click handler and native screenshot capture
-
-## 🔧 Features
-
-### 📋 Enhanced Task Management *(NEW)*
-- **Dual-Tab Interface**: Switch between "Current Session" and "All Tasks" views
-- **Task Status Grouping**: Organized by Pending, In Progress, and Completed
-- **Progress Visualization**: See completion status at a glance
-- **Priority Icons**: 🔥 High, ⚡ Medium, 💡 Low priority indicators
-- **Time Estimates**: Shows estimated implementation time for each task
-- **Task Types**: Automatically categorizes as Styling, Layout, Content, Enhancement
-- **Source Tracking**: Shows whether tasks are from current session or markdown files
-
-### 🎯 Smart Annotation
-- **Universal Element Selection**: Annotate ANY element - links, buttons, containers, backgrounds
-- **Smart Element Labels**: 
-  - Links: "Link: Profile"
-  - Containers: "Sidebar Container", "Background Container"
-  - Auto-detects element purpose from classes, roles, and styles
-- **Comment Protection**: Can't accidentally lose work - clicking another element shakes the comment box
-- **Visual Confirmation**: Brief pulse effect when selecting elements
-- **Enhanced Context**: Captures element metadata for better AI understanding
-
-### 📁 Project Integration
-- **Drag & Drop**: Reorder annotations by priority
-- **Export**: Download annotations as `.moat.json`
-- **Screenshot Capture**: Uses Chrome's native `captureVisibleTab` API for element and rectangle screenshots; tasks can still be submitted if capture fails
-- **🆕 Cursor Streaming**: Real-time sync to your project directory
-- **🆕 Markdown Task Reading**: Displays tasks from connected project files
-- **🆕 Claude Code Support**: Automatically deploys `/bridge` command to `.claude/commands/`
-
-## 🎯 Element Selection
-
-Moat can now select and annotate any element on the page:
-
-- **Interactive Elements**: Links, buttons, inputs
-- **Containers**: Divs, sections, articles with smart labeling
-- **Backgrounds**: Elements with background colors or images
-- **Lists**: UL/OL and individual list items
-- **Any HTML Element**: If you can see it, you can annotate it
-
-## 📤 Export Format
-
-Annotations are exported as Drawbridge task JSON:
-
-```json
-{
-  "sessionId": "moat-session-xyz",
-  "timestamp": 1715736000,
-  "url": "http://localhost:3000",
-  "annotations": [
-    {
-      "type": "user_message",
-      "role": "user",
-      "content": "Move this to the bottom, 16px above viewport",
-      "target": "a[href='/profile']",
-      "elementLabel": "Link: Profile",
-      "elementContext": {
-        "tagName": "a",
-        "text": "Profile",
-        "href": "/profile",
-        "ariaLabel": null,
-        "className": "nav-link"
-      },
-      "boundingRect": { "x": 100, "y": 300, "width": 200, "height": 40 },
-      "screenshot": "data:image/png;base64,...",
-      "status": "sent"
-    }
-  ]
-}
-```
-
-## 🐛 Troubleshooting
-
-- **Extension not working?** Drawbridge works on any URL (localhost, file://, custom domains, etc.)
-- **Wrong element selected?** The improved selector prioritizes unique attributes
-- **Can't see Moat?** Click the extension icon or press `Cmd/Ctrl + Shift + F`
-- **Element not found?** Check if the page structure changed after annotation
-- **Comment box shaking?** Finish or cancel your current annotation before selecting another element
-- **Project not connecting?** Make sure to allow file system access when prompted
-- **Lost connection?** Click the settings icon (⚙️) and reconnect 
-
-## 📂 New Two-File Task Storage System (v0.2)
-
-Moat now stores all annotation tasks in **two files** inside your project's `.moat/` directory:
-
-| File | Purpose | Human Readable? |
-|------|---------|-----------------|
-| `moat-tasks.md` | Friendly markdown checklist for designers & devs. Toggle checkboxes to update status. | ✅ |
-| `moat-tasks-detail.json` | Machine-readable metadata for AI processing (UUID, bounding rect, screenshots, etc.). | 🚫 |
-
-### Why Two Files?
-1. **Single Source of Truth** – Eliminates the previous three-file drift problem.
-2. **Friction-Free Collaboration** – Designers can scan the markdown; AI & scripts use JSON.
-3. **Git-Friendly** – Markdown diff is clear; JSON diff is structured.
-
-### Automatic Migration
-Updating? Moat detects legacy files (`.moat-stream.jsonl`, `moat-tasks-summary.md`, legacy detailed markdown) and **automatically migrates** them on extension start:
-
-1. **Detect** old files
-2. **Convert** to new schema
-3. **Archive** originals with `.backup-YYYY-MM-DDTHH-MM-SS` suffix
-4. **Validate** data integrity
-
-No action required! Check the console for `✅ Migration completed successfully!`.
-
-### Working With the New Files
-- **Checkboxes** in `moat-tasks.md` update `status` in `moat-tasks-detail.json` on save.
-- **Refresh Button** (`🔄 Refresh`) in the sidebar regenerates markdown from JSON ensuring perfect sync.
-- **Large Projects** – Tested with **1 000+ tasks** in <250 ms markdown generation time.
-
-## Troubleshooting Connection Issues
-
-### **🔄 Why Do I Need to Reconnect?**
-
-**Browser Security Limitation**: File System Access API connections cannot persist across browser sessions for security reasons. You'll need to reconnect when:
-
-- ✅ **Browser restarts** (most common)
-- ✅ **Project directory renamed/moved** 
-- ✅ **Browser data cleared**
-- ✅ **Extension updated**
-
-### **🛠 How to Reconnect**
-
-1. **Quick Reconnect**: Press `Cmd+Shift+P` (Mac) or `Ctrl+Shift+P` (Windows)
-2. **Via Extension Icon**: Click the Drawbridge extension icon
-3. **Console**: Run `setupProject()` in browser console
-
-### **✅ Connection Status Check**
-
-To verify your connection:
-```javascript
-// In browser console
-window.directoryHandle ? "✅ Connected" : "❌ Not Connected"
-```
-
-### **🎯 Best Practices**
-
-- **Bookmark localhost**: Keep your dev server URL bookmarked
-- **Use consistent naming**: Avoid renaming project directories
-- **Check connection first**: If annotations aren't saving, reconnect
-- **One project per tab**: Each tab needs its own connection
-
-### **🔧 Debug Connection Issues**
-
-If you're having persistent issues:
-```javascript
-// Check system status
-window.moatDebug?.checkSystemStatus()
-
-// Test connection health
-window.moatDebug?.verifyFiles()
-```
-
----
+- Reload the extension and refresh an already-open page after a storage-format update.
+- Reconnect from the project menu if Chrome's file permissions expire.
+- For missing annotations, verify the selected output folder and check its timestamped directories.
+- A missing `.moat` directory is normal for new projects.
+- Debug the connection with `window.moatDebug.checkSystemStatus()` and saved files with `window.moatDebug.verifyFiles()`.

@@ -1,44 +1,41 @@
 const fs = require('fs');
 const vm = require('vm');
-const { TaskStore } = require('./utils/taskStore');
-const markdownGenerator = require('./utils/markdownGenerator');
+const { AnnotationStore } = require('./utils/annotationStore');
+const { directoryFixture } = require('./tests/directory-handle');
 const source = fs.readFileSync(require.resolve('./content_script.js'), 'utf8');
-function setup() {
-  const files = new Map();
-  const removeEntry = jest.fn(async () => {});
-  const directoryHandle = {
-    getDirectoryHandle: async () => ({ removeEntry }),
-    getFileHandle: async name => ({
-      getFile: async () => ({ size: (files.get(name) || '').length, text: async () => files.get(name) || '' }),
-      createWritable: async () => ({ write: async data => files.set(name, data), close: async () => {} })
-    })
-  };
-  global.window = { directoryHandle };
-  const taskStore = new TaskStore();
-  taskStore.initialize(directoryHandle);
-  taskStore.tasks = [{ id: 'one', title: 'First', comment: 'First comment', status: 'to do', selector: 'button', timestamp: 1, screenshotPath: './screenshots/one.png' },
-    { id: 'two', title: 'Second', comment: 'Second comment', status: 'to do', selector: 'div', timestamp: 2 }];
-  const context = vm.createContext({ taskStore, markdownGenerator, window: { directoryHandle, dispatchEvent: jest.fn() }, CustomEvent: class {} });
+let fixture;
+async function setup() {
+  fixture = directoryFixture();
+  const taskStore = new AnnotationStore();
+  taskStore.initialize(fixture.directory);
+  for (const id of ['one', 'two']) {
+    await taskStore.saveAnnotation({ id, timestamp: new Date(2026, 10, 1, 15, 42).getTime(), content: id,
+      screenshot: 'data:image/png;base64,eA==' }, { title: id, comment: `${id} comment` });
+  }
+  const context = vm.createContext({ taskStore, window: { directoryHandle: fixture.directory, dispatchEvent: jest.fn() }, CustomEvent: class {} });
   vm.runInContext(source.slice(source.indexOf('  async function updateTaskStatusFromSidePanel('), source.indexOf('  // Get count of screenshots')), context);
-  return { context, taskStore, files, removeEntry };
+  return { context, taskStore };
 }
-afterEach(() => { delete global.window; });
-test('deleting a task updates JSON, markdown, and its screenshot', async () => {
-  const { context, taskStore, files, removeEntry } = setup();
+afterEach(() => { fixture?.cleanup(); fixture = null; });
+
+test('deleting a task removes its annotation folder, not another task', async () => {
+  const { context, taskStore } = await setup();
+  const first = taskStore.getTaskById('one').folderName;
+  const second = taskStore.getTaskById('two').folderName;
   await context.deleteTaskFromSidePanel('one');
   expect(taskStore.tasks.map(t => t.id)).toEqual(['two']);
-  expect(JSON.parse(files.get('moat-tasks-detail.json')).map(t => t.id)).toEqual(['two']);
-  expect(files.get('moat-tasks.md')).toContain('Second comment');
-  expect(files.get('moat-tasks.md')).not.toContain('First comment');
-  expect(removeEntry).toHaveBeenCalledWith('one.png');
-});
-test('changing status keeps markdown consistent with JSON', async () => {
-  const { context, files } = setup();
-  await context.updateTaskStatusFromSidePanel('one', 'done');
-  expect(JSON.parse(files.get('moat-tasks-detail.json'))[0].status).toBe('done');
-  expect(files.get('moat-tasks.md')).toContain('[x]');
+  expect(fixture.exists(first)).toBe(false);
+  expect(JSON.parse(fixture.read(`${second}/metadata.json`)).comment).toBe('two comment');
+  expect(fixture.exists('moat-tasks-detail.json')).toBe(false);
 });
 
+test('changing status keeps the annotation comment and metadata consistent', async () => {
+  const { context, taskStore } = await setup();
+  const folder = taskStore.getTaskById('one').folderName;
+  await context.updateTaskStatusFromSidePanel('one', 'done');
+  expect(JSON.parse(fixture.read(`${folder}/metadata.json`)).status).toBe('done');
+  expect(fixture.read(`${folder}/comment.md`)).toContain('[x] done');
+});
 
 test('native panel connections enable shortcuts only while connected', () => {
   let connect;

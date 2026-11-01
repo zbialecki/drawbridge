@@ -334,27 +334,16 @@ class MoatPersistence {
         }
       }
 
-      // Verify we can create/access the .moat directory
-      try {
-        const moatDir = await handle.getDirectoryHandle('.moat', { create: true });
-
-        console.log('✅ Moat Persistence: Project connection restored successfully');
-        return {
-          success: true,
-          directoryHandle: handle,
-          moatDirectory: moatDir,
-          path,
-          timestamp,
-          restored: true
-        };
-      } catch (error) {
-        console.error('🔴 Moat Persistence: Failed to access .moat directory:', error);
-        return {
-          success: false,
-          reason: 'Cannot access .moat directory',
-          path
-        };
+      if (!await this.testDirectoryAccess(handle)) {
+        return { success: false, reason: 'Cannot access selected folder', path };
       }
+      return {
+        success: true,
+        directoryHandle: handle,
+        path,
+        timestamp,
+        restored: true
+      };
 
     } catch (error) {
       console.error('🔴 Moat Persistence: Restoration failed:', error);
