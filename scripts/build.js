@@ -31,6 +31,8 @@ const EXCLUDE_PATTERNS = [
 // Helper function to check if a path should be excluded
 function shouldExclude(relativePath) {
   return EXCLUDE_PATTERNS.some(pattern => {
+    // The top-level README is documentation; rules-templates/README.md is a manifest resource.
+    if (pattern === 'README.md') return relativePath === pattern;
     if (pattern.includes('*')) {
       // Handle wildcard patterns
       const regex = new RegExp(pattern.replace('*', '.*'));
@@ -182,4 +184,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { build };
+module.exports = { build, shouldExclude };

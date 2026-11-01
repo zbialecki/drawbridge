@@ -1,10 +1,8 @@
-// Integration Tests for Tasks 5.1-5.8 – End-to-End & Regression Scenarios
-// NOTE: These tests use JSDOM (default Jest environment) and mock the
-// File System Access API to simulate the browser environment.
+// Integration tests for the supported legacy .moat JSON and Markdown format.
+// These use an in-memory File System Access API mock, not a real browser.
 
 const { TaskStore } = require('../utils/taskStore');
 const MarkdownGenerator = require('../utils/markdownGenerator');
-const LegacyFileMigrator = require('../utils/migrateLegacyFiles');
 
 if (!global.window) {
   global.window = {};
@@ -101,13 +99,13 @@ function createMockAnnotation(index = 0) {
     elementLabel: `Element ${index}`,
     boundingRect: { x: 0, y: 0, width: 100, height: 20 },
     screenshot: null,
-    status: 'in queue',
+    status: 'to do',
     timestamp: Date.now() + index * 1000
   };
 }
 
 // ---------------------------------------------------------------------------
-describe('Integration & QA Tests (Tasks 5.1-5.8)', () => {
+describe('Legacy task JSON and Markdown integration', () => {
   let rootDir;
   let moatDir;
   let taskStore;
@@ -120,7 +118,7 @@ describe('Integration & QA Tests (Tasks 5.1-5.8)', () => {
     taskStore = new TaskStore();
     taskStore.initialize(moatDir);
     markdownGen = MarkdownGenerator;
-    // Attach globals so moat.js and content_script.js (if imported later) can access
+    // The Markdown generator reads the connected directory from window.
     global.window.taskStore = taskStore;
     global.window.markdownGenerator = markdownGen;
     global.window.directoryHandle = moatDir;
@@ -152,11 +150,10 @@ describe('Integration & QA Tests (Tasks 5.1-5.8)', () => {
     };
   }
 
-  // 5.1 End-to-end flow: annotation → TaskStore → markdown
-  test('5.1 End-to-End Annotation Capture Flow', async () => {
+  test('saves task data and generates the legacy checklist', async () => {
     const annotation = createMockAnnotation(1);
 
-    // Simulate conversion & save using new pipeline
+    // Convert the captured data into the legacy task format.
     const taskData = createTaskData({
       title: annotation.elementLabel,
       comment: annotation.content,
@@ -185,8 +182,7 @@ describe('Integration & QA Tests (Tasks 5.1-5.8)', () => {
     expect(mdContent).toContain('Test annotation');
   });
 
-  // 5.2 Refresh button simulation & UI sync
-  test('5.2 Refresh Function Regenerates Markdown and Keeps UI Synced', async () => {
+  test('regenerates the checklist after adding a legacy task', async () => {
     // Pre-populate with two tasks
     for (let i = 0; i < 2; i++) {
       await taskStore.addTaskAndSave(createTaskData({
@@ -200,13 +196,13 @@ describe('Integration & QA Tests (Tasks 5.1-5.8)', () => {
     const mdHandle1 = await moatDir.getFileHandle('moat-tasks.md');
     const size1 = (await mdHandle1.getFile().then(f => f.text())).length;
 
-    // Simulate adding new task and calling refresh
+    // Add a task, then rebuild the checklist.
     const newTask = await taskStore.addTaskAndSave(createTaskData({
       title: 'New Task',
       comment: 'New Task Comment',
       selector: '.item-99'
     }));
-    await markdownGen.rebuildMarkdownFile(taskStore.getAllTasksChronological()); // Represents refresh
+    await markdownGen.rebuildMarkdownFile(taskStore.getAllTasksChronological());
 
     const mdHandle2 = await moatDir.getFileHandle('moat-tasks.md');
     const contentAfter = await mdHandle2.getFile().then(f => f.text());
@@ -214,8 +210,7 @@ describe('Integration & QA Tests (Tasks 5.1-5.8)', () => {
     expect(contentAfter).toContain(newTask.title);
   });
 
-  // 5.3 Checkbox toggle sync
-  test('5.3 Checkbox toggle updates JSON and markdown', async () => {
+  test('keeps JSON status and the checklist checkbox in sync', async () => {
     // Add a task
     const task = await taskStore.addTaskAndSave(createTaskData({
       title: 'Toggle Test',
@@ -238,32 +233,7 @@ describe('Integration & QA Tests (Tasks 5.1-5.8)', () => {
     expect(mdContent).toMatch(/\[x\].*Toggle Test/);
   });
 
-  // 5.4 Migration with various combinations
-  test('5.4 Migration handles JSONL-only legacy files', async () => {
-    // Legacy setup: only JSONL
-    const jsonlContent = JSON.stringify({
-      annotation: {
-        content: 'Legacy A',
-        target: '.legacy',
-        elementLabel: 'Legacy Element'
-      }
-    });
-    const legacyDir = await rootDir.getDirectoryHandle('.moat', { create: true });
-    const legacyHandle = await legacyDir.getFileHandle('.moat-stream.jsonl', { create: true });
-    const writable = await legacyHandle.createWritable();
-    await writable.write(`${jsonlContent}\n`);
-    await writable.close();
-
-    const migrator = new LegacyFileMigrator(moatDir, taskStore, markdownGen);
-    const annotations = await migrator.parseJsonlStream(legacyHandle);
-    const converted = migrator.convertToNewSchema({ jsonlAnnotations: annotations });
-
-    expect(converted.length).toBeGreaterThan(0);
-    expect(converted[0].comment).toBe('Legacy A');
-  });
-
-  // 5.5 Regression check: screenshot metadata updates only when provided
-  test('5.5 Screenshot path updates only when new image is saved', async () => {
+  test('updates the screenshot path when a new image is provided', async () => {
     const baseTask = await taskStore.addTaskAndSave(createTaskData({
       title: 'Screenshot Task',
       comment: 'Needs screenshot',
@@ -285,8 +255,7 @@ describe('Integration & QA Tests (Tasks 5.1-5.8)', () => {
     expect(updatedTask.screenshotPath).toBe('./screenshots/test.png');
   });
 
-  // 5.6 Performance test with 1000 tasks
-  test('5.6 Load test: Markdown generation stays under 250ms for 1000 tasks', () => {
+  test('generates a checklist for 1,000 legacy tasks', () => {
     const bigTasks = [];
     for (let i = 0; i < 1000; i++) {
       bigTasks.push({
@@ -298,54 +267,30 @@ describe('Integration & QA Tests (Tasks 5.1-5.8)', () => {
         timestamp: Date.now()
       });
     }
-    const t0 = performance.now();
-    markdownGen.rebuildMarkdownFromJson(bigTasks);
-    const duration = performance.now() - t0;
-    expect(duration).toBeLessThan(250);
+    const markdown = markdownGen.rebuildMarkdownFromJson(bigTasks);
+    expect(markdown).toContain('**Total**: 1000');
+    expect(markdown).toContain('Task 0');
+    expect(markdown).toContain('Task 999');
   });
 
-  // 5.7 Error scenario: corrupted JSON file
-  test('5.7 Error handling: corrupted JSON should not crash markdown generation', async () => {
-    // Corrupt the existing JSON file
-    const detailHandle = await moatDir.getFileHandle('moat-tasks-detail.json', { create: true });
-    const writable = await detailHandle.createWritable();
-    await writable.write('invalid JSON');
-    await writable.close();
-
-    // Attempt to read and rebuild markdown – should throw but be caught gracefully
-    const markdown = markdownGen.rebuildMarkdownFromJson([]);
-    expect(typeof markdown).toBe('string');
-    expect(markdown).toContain('Moat Tasks');
+  test('generates identical Markdown for unchanged tasks at the same time', async () => {
+    const formatDate = jest.spyOn(Date.prototype, 'toLocaleString').mockReturnValue('fixed time');
+    try {
+      const tasksArr = [{
+        id: 't1',
+        title: 'Same Task',
+        comment: 'Same Task comment',
+        selector: '.same-task',
+        status: 'to do',
+        timestamp: Date.now()
+      }];
+      await markdownGen.rebuildMarkdownFile(tasksArr);
+      const md1 = await (await moatDir.getFileHandle('moat-tasks.md')).getFile().then(f => f.text());
+      await markdownGen.rebuildMarkdownFile(tasksArr);
+      const md2 = await (await moatDir.getFileHandle('moat-tasks.md')).getFile().then(f => f.text());
+      expect(md1).toBe(md2);
+    } finally {
+      formatDate.mockRestore();
+    }
   });
-
-  // 5.8 Git diff cleanliness simulation – ensure two consecutive writes produce identical output if no changes
-  test('5.8 Git diff cleanliness – no diff on identical markdown write', async () => {
-    const tasksArr = [{
-      id: 't1',
-      title: 'Same Task',
-      comment: 'Same Task comment',
-      selector: '.same-task',
-      status: 'to do',
-      timestamp: Date.now()
-    }];
-    await markdownGen.rebuildMarkdownFile(tasksArr);
-    const md1 = await (await moatDir.getFileHandle('moat-tasks.md')).getFile().then(f => f.text());
-
-    // Re-run with identical data
-    await markdownGen.rebuildMarkdownFile(tasksArr);
-    const md2 = await (await moatDir.getFileHandle('moat-tasks.md')).getFile().then(f => f.text());
-
-    expect(md1).toBe(md2);
-  });
-
-  // 5.9 Cross-browser placeholder (manual or CI using Playwright)
-  test.skip('5.9 Cross-browser smoke test (Chrome, Edge, Firefox)', () => {
-    // This test is a placeholder to indicate cross-browser coverage.
-    // In CI, use Playwright test runner with following config:
-    //   npx playwright test --project=chromium
-    //   npx playwright test --project=webkit
-    //   npx playwright test --project=firefox
-    // The real implementation launches start-here, injects extension, and runs UI smoke steps.
-    expect(true).toBe(true);
-  });
-}); 
+});

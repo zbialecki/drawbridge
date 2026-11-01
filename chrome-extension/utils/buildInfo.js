@@ -1,5 +1,5 @@
 // Shared build id — keep DRAWBRIDGE_FEATURE_BUILD in sync across content + background
-const DRAWBRIDGE_FEATURE_BUILD = 'screen-capture-v1';
+const DRAWBRIDGE_FEATURE_BUILD = 'legacy-cleanup-v1';
 
 function getContentScriptBuild(manifestVersion) {
   return `${manifestVersion}-${DRAWBRIDGE_FEATURE_BUILD}`;

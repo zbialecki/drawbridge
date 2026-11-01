@@ -32,7 +32,6 @@
         "utils/taskStore.js",
         "utils/markdownGenerator.js",
         "utils/annotationStore.js",
-        "utils/migrateLegacyFiles.js",
         "content_script.js"
       ],
       "css": ["content.css"],

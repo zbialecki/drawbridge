@@ -15,18 +15,18 @@ const {
 describe('Task Statistics Generation', () => {
     test('generateTaskStats should count tasks correctly', () => {
         const tasks = [
-            { status: 'pending' },
-            { status: 'pending' },
-            { status: 'completed' },
-            { status: 'in-progress' }
+            { status: 'to do' },
+            { status: 'to do' },
+            { status: 'done' },
+            { status: 'doing' }
         ];
         
         const stats = generateTaskStats(tasks);
         expect(stats).toEqual({
             total: 4,
-            pending: 2,
-            'in-progress': 1,
-            completed: 1
+            'to do': 2,
+            doing: 1,
+            done: 1
         });
     });
 
@@ -34,32 +34,32 @@ describe('Task Statistics Generation', () => {
         const stats = generateTaskStats([]);
         expect(stats).toEqual({
             total: 0,
-            pending: 0,
-            'in-progress': 0,
-            completed: 0
+            'to do': 0,
+            doing: 0,
+            done: 0
         });
     });
 
     test('generateTaskStats should handle unknown status', () => {
         const tasks = [
-            { status: 'pending' },
+            { status: 'to do' },
             { status: 'unknown-status' },
             { status: null }
         ];
         
         const stats = generateTaskStats(tasks);
         expect(stats.total).toBe(3);
-        expect(stats.pending).toBe(1);
-        expect(stats['in-progress']).toBe(0);
-        expect(stats.completed).toBe(0);
+        expect(stats['to do']).toBe(1);
+        expect(stats.doing).toBe(0);
+        expect(stats.done).toBe(0);
     });
 });
 
 describe('Status to Checkbox Conversion', () => {
     test('statusToCheckbox should convert statuses correctly', () => {
-        expect(statusToCheckbox('pending')).toBe('[ ]');
-        expect(statusToCheckbox('in-progress')).toBe('[~]');
-        expect(statusToCheckbox('completed')).toBe('[x]');
+        expect(statusToCheckbox('to do')).toBe('[ ]');
+        expect(statusToCheckbox('doing')).toBe('[~]');
+        expect(statusToCheckbox('done')).toBe('[x]');
         expect(statusToCheckbox('unknown')).toBe('[ ]');
         expect(statusToCheckbox(null)).toBe('[ ]');
     });
@@ -104,7 +104,7 @@ describe('Comment Truncation', () => {
 });
 
 describe('Task Sorting', () => {
-    test('sortTasksByTimestamp should sort newest first', () => {
+    test('sortTasksByTimestamp should sort oldest first', () => {
         const tasks = [
             { id: '1', timestamp: 1000 },
             { id: '2', timestamp: 3000 },
@@ -112,9 +112,9 @@ describe('Task Sorting', () => {
         ];
         
         const sorted = sortTasksByTimestamp(tasks);
-        expect(sorted[0].id).toBe('2');
+        expect(sorted[0].id).toBe('1');
         expect(sorted[1].id).toBe('3');
-        expect(sorted[2].id).toBe('1');
+        expect(sorted[2].id).toBe('2');
     });
 
     test('sortTasksByTimestamp should not mutate original array', () => {
@@ -136,7 +136,7 @@ describe('Markdown Generation', () => {
             title: 'First Task',
             comment: 'This is the first task comment',
             selector: '.first',
-            status: 'pending',
+            status: 'to do',
             timestamp: 2000
         },
         {
@@ -144,7 +144,7 @@ describe('Markdown Generation', () => {
             title: 'Second Task',
             comment: 'This is the second task comment',
             selector: '.second',
-            status: 'completed',
+            status: 'done',
             timestamp: 3000
         },
         {
@@ -152,7 +152,7 @@ describe('Markdown Generation', () => {
             title: 'Third Task',
             comment: 'This is the third task comment',
             selector: '.third',
-            status: 'in-progress',
+            status: 'doing',
             timestamp: 1000
         }
     ];
@@ -162,13 +162,13 @@ describe('Markdown Generation', () => {
         
         expect(markdown).toContain('# Moat Tasks');
         expect(markdown).toContain('**Total**: 3');
-        expect(markdown).toContain('**Pending**: 1');
-        expect(markdown).toContain('**In Progress**: 1');
-        expect(markdown).toContain('**Completed**: 1');
+        expect(markdown).toContain('**To Do**: 1');
+        expect(markdown).toContain('**Doing**: 1');
+        expect(markdown).toContain('**Done**: 1');
         expect(markdown).toContain('## Tasks');
-        expect(markdown).toContain('1. [x] Second Task');
+        expect(markdown).toContain('1. [~] Third Task');
         expect(markdown).toContain('2. [ ] First Task');
-        expect(markdown).toContain('3. [~] Third Task');
+        expect(markdown).toContain('3. [x] Second Task');
     });
 
     test('generateMarkdownFromTasks should handle empty task array', () => {
@@ -193,7 +193,7 @@ describe('Markdown Generation', () => {
                 id: '1',
                 comment: 'Comment without title',
                 selector: '.test',
-                status: 'pending',
+                status: 'to do',
                 timestamp: 1000
             }
         ];
@@ -209,7 +209,7 @@ describe('Markdown Generation', () => {
                 title: 'Task',
                 comment: 'This is a very long comment that should be truncated in the markdown output because it exceeds the reasonable length for display',
                 selector: '.test',
-                status: 'pending',
+                status: 'to do',
                 timestamp: 1000
             }
         ];
@@ -233,7 +233,7 @@ describe('Rebuild Functions', () => {
             title: 'Test Task',
             comment: 'Test comment',
             selector: '.test',
-            status: 'pending',
+            status: 'to do',
             timestamp: 1000
         }
     ];
@@ -307,7 +307,7 @@ describe('File Writing Integration', () => {
                 title: 'Test Task',
                 comment: 'Test comment',
                 selector: '.test',
-                status: 'pending',
+                status: 'to do',
                 timestamp: 1000
             }
         ];
@@ -351,4 +351,4 @@ describe('Error Handling', () => {
         
         delete global.window;
     });
-}); 
+});

@@ -9,6 +9,9 @@ const {
     validateTaskObject,
     sortTasksByTimestamp
 } = require('./taskStore.js');
+const fs = require('node:fs');
+const path = require('node:path');
+const { directoryFixture } = require('../tests/directory-handle');
 
 describe('UUID Generation', () => {
     test('generateUUID should create valid UUID v4', () => {
@@ -41,7 +44,7 @@ describe('Task Object Creation', () => {
             selector: '.test-element',
             boundingRect: { x: 10, y: 20, w: 100, h: 50 },
             screenshotPath: './screenshots/test.png',
-            status: TASK_STATUS.PENDING
+            status: TASK_STATUS.TO_DO
         });
         expect(task.id).toBeDefined();
         expect(task.timestamp).toBeDefined();
@@ -60,9 +63,9 @@ describe('Task Object Creation', () => {
     });
 
     test('createTaskObject should throw error for missing required fields', () => {
-        expect(() => createTaskObject({})).toThrow('Task must have title, comment, and selector');
+        expect(() => createTaskObject({})).toThrow('Task must have title and comment');
         expect(() => createTaskObject({ title: 'Test' })).toThrow();
-        expect(() => createTaskObject({ title: 'Test', comment: 'Comment' })).toThrow();
+        expect(createTaskObject({ title: 'Test', comment: 'Comment' }).selector).toBeNull();
     });
 });
 
@@ -73,7 +76,7 @@ describe('Task Validation', () => {
             title: 'Test',
             comment: 'Comment',
             selector: '.test',
-            status: TASK_STATUS.PENDING,
+            status: TASK_STATUS.TO_DO,
             timestamp: Date.now()
         };
         
@@ -187,13 +190,13 @@ describe('TaskStore Class', () => {
             selector: '.test'
         });
         
-        const updated = taskStore.updateTaskStatus(task.id, TASK_STATUS.COMPLETED);
-        expect(updated.status).toBe(TASK_STATUS.COMPLETED);
+        const updated = taskStore.updateTaskStatus(task.id, TASK_STATUS.DONE);
+        expect(updated.status).toBe(TASK_STATUS.DONE);
         expect(updated.lastModified).toBeDefined();
     });
 
     test('updateTaskStatus should return null for non-existent task', () => {
-        const result = taskStore.updateTaskStatus('non-existent-id', TASK_STATUS.COMPLETED);
+        const result = taskStore.updateTaskStatus('non-existent-id', TASK_STATUS.DONE);
         expect(result).toBeNull();
     });
 
@@ -212,12 +215,12 @@ describe('TaskStore Class', () => {
         taskStore.addTask({ title: 'Task 2', comment: 'Comment 2', selector: '.test2' });
         
         const task3 = taskStore.addTask({ title: 'Task 3', comment: 'Comment 3', selector: '.test3' });
-        taskStore.updateTaskStatus(task3.id, TASK_STATUS.COMPLETED);
+        taskStore.updateTaskStatus(task3.id, TASK_STATUS.DONE);
         
         const stats = taskStore.getTaskStats();
         expect(stats.total).toBe(3);
-        expect(stats.pending).toBe(2);
-        expect(stats.completed).toBe(1);
+        expect(stats['to do']).toBe(2);
+        expect(stats.done).toBe(1);
     });
 
     test('getAllTasks should be alias for getTasks', () => {
@@ -241,17 +244,21 @@ describe('Error Scenarios', () => {
         taskStore = new TaskStore();
     });
 
-    test('should handle corrupted task data gracefully', () => {
-        // Simulate corrupted task being added directly
-        taskStore.tasks.push({ invalid: 'task' });
-        
-        expect(() => taskStore.saveTasksToFile).toBeDefined();
-        // Note: Actual file operations would be tested in integration tests
+    test('rejects corrupt task data before writing a legacy task file', async () => {
+        const fixture = directoryFixture();
+        try {
+            taskStore.initialize(fixture.directory);
+            taskStore.tasks.push({ invalid: 'task' });
+            await expect(taskStore.saveTasksToFile()).rejects.toThrow('Task missing required field');
+            expect(fixture.exists('moat-tasks-detail.json')).toBe(false);
+        } finally {
+            fixture.cleanup();
+        }
     });
 
     test('should handle file path not set', async () => {
-        await expect(taskStore.loadTasksFromFile()).rejects.toThrow('TaskStore not initialized with file path');
-        await expect(taskStore.saveTasksToFile()).rejects.toThrow('TaskStore not initialized with file path');
+        await expect(taskStore.loadTasksFromFile()).rejects.toThrow('TaskStore not initialized with directory handle');
+        await expect(taskStore.saveTasksToFile()).rejects.toThrow('TaskStore not initialized with directory handle');
     });
 
     test('should handle invalid task data in addTask', () => {
@@ -266,79 +273,44 @@ describe('Error Scenarios', () => {
     });
 });
 
-describe('TaskStore with File Path', () => {
+describe('Legacy task file operations', () => {
+    let fixture;
     let taskStore;
 
     beforeEach(() => {
+        fixture = directoryFixture();
         taskStore = new TaskStore();
-        taskStore.initialize('./test-tasks.json');
+        taskStore.initialize(fixture.directory);
     });
 
-    test('initialize should set file path', () => {
-        expect(taskStore.filePath).toBe('./test-tasks.json');
+    afterEach(() => fixture.cleanup());
+
+    test('saves and reloads task data using the selected directory handle', async () => {
+        const task = await taskStore.addTaskAndSave({ title: 'Test Task', comment: 'Test comment', selector: '.test' });
+        expect(JSON.parse(fixture.read('moat-tasks-detail.json'))).toMatchObject([
+            { id: task.id, comment: 'Test comment', status: 'to do' }
+        ]);
+
+        const reloaded = new TaskStore();
+        reloaded.initialize(fixture.directory);
+        expect(await reloaded.loadTasksFromFile()).toMatchObject([{ id: task.id, selector: '.test' }]);
     });
 
-    test('createBackup should return false without directoryHandle', async () => {
-        const result = await taskStore.createBackup();
-        expect(result).toBe(false);
+    test('creates a timestamped backup containing the saved tasks', async () => {
+        const task = await taskStore.addTaskAndSave({ title: 'Test Task', comment: 'Test comment' });
+        expect(await taskStore.createBackup()).toBe(true);
+        const backup = fs.readdirSync(fixture.root).find(name => /^moat-tasks-detail\.backup\..*\.json$/.test(name));
+        expect(backup).toBeDefined();
+        expect(JSON.parse(fixture.read(backup))).toMatchObject([{ id: task.id, comment: 'Test comment' }]);
+    });
+
+    test('reports malformed legacy JSON without overwriting it', async () => {
+        fs.writeFileSync(path.join(fixture.root, 'moat-tasks-detail.json'), '{invalid json');
+        await expect(taskStore.loadTasksFromFile()).rejects.toThrow('Failed to load tasks');
+        expect(fixture.read('moat-tasks-detail.json')).toBe('{invalid json');
+    });
+
+    test('cannot create a backup without a directory', async () => {
+        expect(await new TaskStore().createBackup()).toBe(false);
     });
 });
-
-// Mock tests for File System Access API scenarios
-describe('File System Access API Integration', () => {
-    let taskStore;
-    let mockDirectoryHandle;
-    let mockFileHandle;
-    let mockWritable;
-
-    beforeEach(() => {
-        taskStore = new TaskStore();
-        taskStore.initialize('./test-tasks.json');
-
-        mockWritable = {
-            write: jest.fn().mockResolvedValue(undefined),
-            close: jest.fn().mockResolvedValue(undefined)
-        };
-
-        mockFileHandle = {
-            createWritable: jest.fn().mockResolvedValue(mockWritable)
-        };
-
-        mockDirectoryHandle = {
-            getFileHandle: jest.fn().mockResolvedValue(mockFileHandle)
-        };
-
-        // Mock global window object
-        global.window = {
-            directoryHandle: mockDirectoryHandle
-        };
-    });
-
-    afterEach(() => {
-        delete global.window;
-    });
-
-    test('saveTasksToFile should write JSON to file', async () => {
-        taskStore.addTask({
-            title: 'Test Task',
-            comment: 'Test comment',
-            selector: '.test'
-        });
-
-        const result = await taskStore.saveTasksToFile();
-        
-        expect(result).toBe(true);
-        expect(mockDirectoryHandle.getFileHandle).toHaveBeenCalledWith('moat-tasks-detail.json', { create: true });
-        expect(mockWritable.write).toHaveBeenCalled();
-        expect(mockWritable.close).toHaveBeenCalled();
-    });
-
-    test('createBackup should create timestamped backup', async () => {
-        const result = await taskStore.createBackup();
-        
-        expect(result).toBe(true);
-        expect(mockDirectoryHandle.getFileHandle).toHaveBeenCalledWith(
-            expect.stringMatching(/moat-tasks-detail\.backup\.\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}.*\.json/)
-        );
-    });
-}); 

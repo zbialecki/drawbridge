@@ -5,11 +5,14 @@
  * directory handles using IndexedDB.
  */
 
+const { MoatPersistence } = require('./persistence.js');
+const originalNavigator = Object.getOwnPropertyDescriptor(global, 'navigator');
+
 // Mock IndexedDB for testing
 class MockIDBDatabase {
   constructor() {
-    this.objectStoreNames = { contains: () => false };
     this.stores = new Map();
+    this.objectStoreNames = { contains: name => this.stores.has(name) };
   }
 
   transaction(stores, mode) {
@@ -29,7 +32,9 @@ class MockIDBTransaction {
   }
 
   objectStore(name) {
-    return this.stores.get(name) || new MockIDBObjectStore();
+    const store = this.stores.get(name);
+    if (!store) throw new Error(`Object store not found: ${name}`);
+    return store;
   }
 }
 
@@ -44,41 +49,26 @@ class MockIDBObjectStore {
 
   put(value) {
     this.data.set(value.id, value);
-    return { 
-      onsuccess: null,
-      onerror: null,
-      result: value
-    };
+    return new MockIDBRequest(value);
   }
 
   get(id) {
     const result = this.data.get(id);
-    return { 
-      onsuccess: null,
-      onerror: null,
-      result
-    };
+    return new MockIDBRequest(result);
   }
 
   delete(id) {
     this.data.delete(id);
-    return { 
-      onsuccess: null,
-      onerror: null
-    };
+    return new MockIDBRequest();
   }
 
   getAll() {
-    return { 
-      onsuccess: null,
-      onerror: null,
-      result: Array.from(this.data.values())
-    };
+    return new MockIDBRequest(Array.from(this.data.values()));
   }
 }
 
 class MockIDBRequest {
-  constructor(result = null, error = null) {
+  constructor(result = null, error = null, upgrade = false) {
     this.result = result;
     this.error = error;
     this.onsuccess = null;
@@ -89,6 +79,7 @@ class MockIDBRequest {
       if (error) {
         this.onerror && this.onerror({ target: this });
       } else {
+        if (upgrade) this.onupgradeneeded?.({ target: this });
         this.onsuccess && this.onsuccess({ target: this });
       }
     }, 0);
@@ -128,30 +119,36 @@ class MockDirectoryHandle {
 
 // Test setup
 function setupMockEnvironment() {
-  // Mock IndexedDB
-  global.indexedDB = {
+  const indexedDB = {
     open: (name, version) => {
       const db = new MockIDBDatabase();
-      return new MockIDBRequest(db);
+      return new MockIDBRequest(db, null, true);
     }
   };
+  global.indexedDB = indexedDB;
 
   // Mock window
   global.window = {
     location: { origin: 'http://localhost:3000' },
     showDirectoryPicker: () => Promise.resolve(new MockDirectoryHandle()),
-    MoatPersistence: null,
-    moatPersistence: null
+    indexedDB,
+    MoatPersistence
   };
-
-  // Load the persistence module
-  require('./persistence.js');
+  Object.defineProperty(global, 'navigator', { configurable: true, value: { userAgent: 'test browser' } });
   
   return {
-    persistence: global.window.moatPersistence,
+    persistence: new MoatPersistence(),
     mockDirectoryHandle: new MockDirectoryHandle()
   };
 }
+
+afterEach(() => {
+  delete global.window;
+  delete global.indexedDB;
+  if (originalNavigator) Object.defineProperty(global, 'navigator', originalNavigator);
+  else delete global.navigator;
+  jest.restoreAllMocks();
+});
 
 // Tests
 describe('MoatPersistence', () => {
@@ -225,6 +222,8 @@ describe('MoatPersistence', () => {
   });
 
   test('should clean up old handles', async () => {
+    const now = Date.now();
+    jest.spyOn(Date, 'now').mockReturnValueOnce(now - 1000).mockReturnValue(now);
     // Store a connection
     await persistence.persistProjectConnection(
       mockDirectoryHandle,
@@ -270,7 +269,23 @@ describe('MoatPersistence', () => {
     );
 
     const handles = await persistence.getAllHandles();
-    expect(Array.isArray(handles)).toBe(true);
+    expect(handles).toMatchObject([{ path: 'project1', handle: mockDirectoryHandle }]);
+  });
+
+  test('restoration requests renewed permission only when called from a user gesture', async () => {
+    mockDirectoryHandle.queryPermission = jest.fn(async () => 'prompt');
+    mockDirectoryHandle.requestPermission = jest.fn(async () => 'granted');
+    await persistence.persistProjectConnection(mockDirectoryHandle, 'test-project');
+
+    expect(await persistence.restoreProjectConnection()).toMatchObject({
+      success: false, requiresReconnection: true, path: 'test-project'
+    });
+    expect(mockDirectoryHandle.requestPermission).not.toHaveBeenCalled();
+
+    expect(await persistence.restoreProjectConnection({ allowPermissionPrompt: true })).toMatchObject({
+      success: true, directoryHandle: mockDirectoryHandle, path: 'test-project'
+    });
+    expect(mockDirectoryHandle.requestPermission).toHaveBeenCalledWith({ mode: 'readwrite' });
   });
 });
 
@@ -319,4 +334,4 @@ if (typeof module !== 'undefined' && module.exports) {
     MockDirectoryHandle,
     setupMockEnvironment
   };
-} 
+}

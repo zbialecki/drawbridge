@@ -154,9 +154,6 @@
   let taskStore = null;
   let markdownGenerator = null;
 
-  // Initialize utility modules
-  let migrator = null; // Task 4.6: Migration system
-
   // Remove duplicate task files left behind by Chrome's siloed swap-file mode
   // when an editor was holding the target open during a previous write.
   // Matches "moat-tasks 2.md", "moat-tasks-detail 3.json", etc.
@@ -257,126 +254,6 @@
     
     console.error('❌ Moat: Failed to initialize utilities after', maxRetries, 'attempts');
     return false;
-
-    // Task 4.6: Initialize migration system (only if directory handle is available)
-    if (window.LegacyFileMigrator && taskStore && markdownGenerator && window.directoryHandle) {
-      migrator = new window.LegacyFileMigrator(window.directoryHandle, taskStore, markdownGenerator);
-      console.log('Moat: LegacyFileMigrator initialized');
-      
-      // Auto-trigger migration check on startup
-      setTimeout(checkAndMigrateLegacyFiles, 1000);
-    } else if (!window.directoryHandle) {
-      console.log('Moat: Directory handle not available yet, migration system will be initialized after project connection');
-    } else {
-      console.warn('Moat: LegacyFileMigrator not available or dependencies missing');
-    }
-  }
-
-  // Task 4.6: Migration trigger on extension startup
-  async function checkAndMigrateLegacyFiles() {
-    console.log('🔍 Moat: Checking for legacy files to migrate...');
-    
-    if (!migrator) {
-      console.warn('🔍 Moat: Migration system not available');
-      return;
-    }
-
-    try {
-      const legacyFiles = await migrator.detectLegacyFiles();
-      
-      if (legacyFiles.hasLegacyFiles) {
-        console.log('🔍 Moat: Legacy files detected, starting migration...');
-        showNotification('Migrating legacy files to new format...', 'info');
-        
-        const result = await migrator.performMigration();
-        
-        if (result.success) {
-          console.log('✅ Moat: Migration completed successfully');
-          showNotification(`Migration complete! Converted ${result.tasksConverted} tasks, archived ${result.filesArchived} files`);
-          
-          // Refresh the sidebar to show migrated tasks
-          window.dispatchEvent(new CustomEvent('moat:tasks-updated', {
-            detail: { source: 'migration', taskCount: result.tasksConverted }
-          }));
-          
-        } else {
-          console.error('❌ Moat: Migration failed:', result.errors);
-          showNotification(`Migration failed: ${result.errors[0] || 'Unknown error'}`, 'error');
-        }
-        
-        // Store migration report for debugging
-        window.moatMigrationReport = migrator.getMigrationReport();
-        
-      } else {
-        console.log('🔍 Moat: No legacy files found, migration not needed');
-      }
-      
-    } catch (error) {
-      console.error('🔍 Moat: Migration check failed:', error);
-      showNotification(`Migration check failed: ${error.message}`, 'error');
-    }
-  }
-
-  // Task 4.7: Manual migration trigger function
-  async function triggerManualMigration() {
-    console.log('🚀 Moat: Manual migration triggered');
-    
-    if (!migrator) {
-      showNotification('Migration system not available', 'error');
-      return { success: false, error: 'Migration system not available' };
-    }
-
-    try {
-      showNotification('Starting manual migration...', 'info');
-      const result = await migrator.performMigration();
-      
-      if (result.success) {
-        showNotification(`Manual migration complete! ${result.tasksConverted} tasks converted`);
-      } else {
-        showNotification(`Manual migration failed: ${result.errors[0]}`, 'error');
-      }
-      
-      return result;
-      
-    } catch (error) {
-      console.error('🚀 Moat: Manual migration failed:', error);
-      showNotification(`Manual migration error: ${error.message}`, 'error');
-      return { success: false, error: error.message };
-    }
-  }
-
-  // Task 4.8: Manual rollback function
-  async function triggerMigrationRollback() {
-    console.log('🔙 Moat: Migration rollback triggered');
-    
-    if (!migrator) {
-      showNotification('Migration system not available', 'error');
-      return { success: false, error: 'Migration system not available' };
-    }
-
-    try {
-      showNotification('Rolling back migration...', 'info');
-      const result = await migrator.rollbackMigration();
-      
-      if (result.success) {
-        showNotification(`Rollback complete! Restored ${result.restoredCount} files`);
-        
-        // Refresh sidebar to show restored state
-        window.dispatchEvent(new CustomEvent('moat:tasks-updated', {
-          detail: { source: 'rollback' }
-        }));
-        
-      } else {
-        showNotification(`Rollback failed: ${result.error}`, 'error');
-      }
-      
-      return result;
-      
-    } catch (error) {
-      console.error('🔙 Moat: Rollback failed:', error);
-      showNotification(`Rollback error: ${error.message}`, 'error');
-      return { success: false, error: error.message };
-    }
   }
 
   // Convert annotation format to TaskStore format (Task 2.1)
@@ -4267,41 +4144,9 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
     clearQueue: () => window.MoatSafeStorage && window.MoatSafeStorage.removeItem('moat.queue'),
     testAnnotationCaptureFlow,
     runEndToEndTest: runEndToEndTestWhenReady,
-    // Migration debugging functions
-    triggerMigration: triggerManualMigration,
-    rollbackMigration: triggerMigrationRollback,
-    checkLegacyFiles: async () => {
-      if (migrator) {
-        return await migrator.detectLegacyFiles();
-      }
-      return { error: 'Migration system not available' };
-    },
-    getMigrationReport: () => {
-      if (migrator) {
-        return migrator.getMigrationReport();
-      }
-      return window.moatMigrationReport || { error: 'No migration report available' };
-    },
     // Task system debugging
     getTaskStore: () => taskStore,
     getMarkdownGenerator: () => markdownGenerator,
-    getMigrator: () => migrator,
-    testMigrationWithRealData: async () => {
-      console.log('🧪 Testing migration with start-here data...');
-      if (!migrator) {
-        console.error('Migration system not available');
-        return { success: false, error: 'Migration system not available' };
-      }
-      
-      try {
-        const result = await migrator.performMigration();
-        console.log('🧪 Migration test result:', result);
-        return result;
-      } catch (error) {
-        console.error('🧪 Migration test failed:', error);
-        return { success: false, error: error.message };
-      }
-    },
     // NEW: Debug functions for current issue
     checkSystemStatus: () => {
       console.log('🔧 === MOAT SYSTEM STATUS ===');

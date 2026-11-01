@@ -39,7 +39,7 @@ For local `file://` pages, open the Drawbridge extension details in Chrome and e
 4. Select the folder where you want annotation folders saved. Choose the app's project root if you also want `/bridge` installed there.
 5. Approve Chrome's file access prompt.
 
-Drawbridge saves each annotation in its own timestamped subfolder directly inside the selected folder. It does not create a hidden `.moat` folder for new annotations.
+Drawbridge saves each annotation in its own timestamped subfolder directly inside the selected folder.
 
 ### 3. Process The Queue
 
@@ -108,8 +108,6 @@ selected-folder/
 
 Folder names use local time in `YY-MM-DD HH-mm` format. Conflicts get `_2`, `_3`, and so on. `comment.md` contains the full comment and status; `metadata.json` contains one annotation, including its page URL, selector, geometry, status, and image paths relative to that folder. A failed capture simply omits `screenshot.png`. Failed file writes keep the editor open for retry.
 
-Existing `.moat` annotations remain readable in place; they are not automatically moved or deleted. New folders are not automatically git-ignored.
-
 Drawbridge also installs `.claude/commands/bridge.md`, `.windsurf/workflows/bridge.md`, and `.codex/prompts/bridge.md` in the selected folder, and adds those workflow directories to an existing `.gitignore`. If annotations are saved outside your code project, tell your AI tool where that output folder is.
 
 ## Development
@@ -135,7 +133,3 @@ For the optional clipboard watcher, run `node /path/to/drawbridge/scripts/drawbr
 ## License
 
 This project uses a custom license. See [LICENSE](LICENSE).
-
-Free to use, copy, and modify for lawful purposes. Redistribution, sublicensing, selling, or offering as a commercial service are not permitted without a commercial license.
-
-Commercial licensing: breschicreative@gmail.com
