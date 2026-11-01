@@ -47,14 +47,15 @@ After adding annotations, open your project in Cursor, Claude Code, Codex, or Wi
 
 ## Annotate
 
-- Press `C`, or use Tools -> Comment, then click an element and leave a note.
-- Press `R`, or use Tools -> Rectangle, then drag over an area and leave a note.
+- Press `C`, or use + Add -> Comment, then click an element and leave a note.
+- Press `R`, or use + Add -> Rectangle, then drag over an area and leave a note.
+- Press `S`, or use + Add -> Screen, to capture the visible viewport and describe it.
 - Press `Esc` to exit an annotation mode.
 - Click the Drawbridge toolbar icon to open or close the drawer.
 
 Tasks appear in the drawer and sync to your connected project.
 
-Both annotation modes use Chrome's native screenshot capture, cropped around the selection with padding. Screenshots include the visible annotation overlay and are saved beside each annotation's comment and metadata. If capture fails, you can still submit the task without a screenshot.
+Comment and Rectangle use Chrome's native screenshot capture, cropped around the selection with padding. Screen captures the entire visible viewport before opening its centered editor. Screenshots are saved beside each annotation's comment and metadata. If capture fails, Comment and Rectangle can still be submitted without a screenshot; Screen can be retried.
 
 ![Drawbridge comment annotation](https://github.com/breschio/drawbridge-media/blob/main/drawbridge-comment-2.gif?raw=true)
 
@@ -121,10 +122,11 @@ npm run build
 
 The build output is written to `dist/drawbridge-v<version>.zip`.
 
-For the optional clipboard watcher, run `node /path/to/drawbridge/scripts/moat-watcher.js` from the selected output folder (or `npm run watch` when it is this repository's root). It reads timestamped annotations and keeps a `watcher.json` receipt inside each copied annotation's folder.
+For the optional clipboard watcher, run `node /path/to/drawbridge/scripts/drawbridge-watcher.js` from the selected output folder (or `npm run watch` when it is this repository's root). It reads timestamped annotations and keeps a `watcher.json` receipt inside each copied annotation's folder.
 
 ## Troubleshooting
 
+- After reloading or updating the extension, refresh open app tabs to restore extension messaging and native screenshots.
 - If the icon does nothing after reloading the extension, click it once on the page again. Drawbridge now injects missing scripts into existing tabs.
 - If the drawer looks stale, close and reopen it with the toolbar icon.
 - If project files are missing, reconnect the project from the drawer.

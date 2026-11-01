@@ -14,7 +14,13 @@ let currentTab = 'to do';
 let tasks = [];
 let isConnected = false;
 let projectPath = '';
-let currentMode = null; // 'comment', 'drawing', or null
+let currentMode = null; // 'comment', 'drawing', 'screen', or null
+
+const trashIcon = `
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+    <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 10v6M14 10v6"/>
+  </svg>
+`;
 
 // Thumbnail cache
 const thumbnailCache = new Map();
@@ -195,8 +201,21 @@ function setupEventListeners() {
         sendToContentScript({ type: 'ENTER_COMMENT_MODE' }, false);
       } else if (action === 'rectangle') {
         sendToContentScript({ type: 'ENTER_DRAWING_MODE' }, false);
+      } else if (action === 'screen') {
+        await requestScreenCapture();
       }
     });
+  });
+
+  // The panel can have keyboard focus after opening the tools menu.
+  document.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() !== 's' || e.ctrlKey || e.metaKey || e.altKey ||
+        e.repeat || e.isComposing || e.keyCode === 229 || document.hidden ||
+        e.target?.matches?.('input, textarea, select') || e.target?.isContentEditable ||
+        e.target?.closest?.('[contenteditable], [role="textbox"]')) return;
+    e.preventDefault();
+    hideToolsMenu();
+    requestScreenCapture();
   });
 
   // Settings button (theme toggle for now)
@@ -210,6 +229,17 @@ function setupEventListeners() {
 
   // Listen for messages from content script via background
   chrome.runtime.onMessage.addListener(handleMessage);
+}
+
+async function requestScreenCapture() {
+  if (!contentScriptReady && !await connectWithRetry(2)) {
+    showNotification('Please refresh the page first', 'error');
+    return;
+  }
+  const result = await sendToContentScript({ type: 'CAPTURE_SCREEN' }, false);
+  if (!result?.success) {
+    showNotification(result?.error || 'Could not capture the screen. Please refresh the page and try again.', 'error');
+  }
 }
 
 // Message Handling
@@ -250,7 +280,7 @@ function handleMessage(message, sender, sendResponse) {
     case 'MODE_CHANGED':
       currentMode = message.mode;
       updateToolsButtonState();
-      if (message.mode) {
+      if (message.mode === 'comment' || message.mode === 'drawing') {
         showNotification(`${message.mode === 'comment' ? 'Comment' : 'Rectangle'} mode active - click on page`, 'info');
       }
       break;
@@ -490,13 +520,18 @@ function renderTasks() {
   });
 
   if (filteredTasks.length === 0) {
+    const emptyMessages = {
+      'to do': 'No recorded tasks',
+      'doing': 'No tasks in progress',
+      'done': 'No completed tasks'
+    };
     taskContainer.innerHTML = `
       <div class="empty-state">
         <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
         </svg>
-        <p>No ${currentTab} tasks</p>
-        <p class="hint">Use the tools to annotate elements on the page</p>
+        <p>${emptyMessages[currentTab] || 'No tasks'}</p>
+        <p class="hint">Use + Add to annotate elements on the page</p>
       </div>
     `;
     return;
@@ -535,11 +570,14 @@ function addTaskEventListeners() {
 
     // Delete button (on card or thumbnail)
     card.querySelectorAll('.delete-btn, .thumbnail-delete-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        if (confirm('Delete this task?')) {
-          // Don't show error - TASK_DELETED message will refresh the UI
-          sendToContentScript({ type: 'DELETE_TASK', taskId }, false);
+        if (confirm('Delete this task and its saved files?')) {
+          const result = await sendToContentScript({ type: 'DELETE_TASK', taskId }, false);
+          if (!result?.success) {
+            const detail = result?.error || 'Please refresh the page and try again.';
+            showNotification(`Could not delete task: ${detail}`, 'error');
+          }
         }
       });
     });
@@ -620,10 +658,8 @@ function renderTaskCard(task) {
           <div class="task-header">
             <span class="task-time">${timeAgo}</span>
             ${!hasScreenshot ? `
-              <button class="delete-btn" title="Delete task">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M18 6L6 18M6 6l12 12"/>
-                </svg>
+              <button type="button" class="delete-btn" title="Delete task and files" aria-label="Delete task and files">
+                ${trashIcon}
               </button>
             ` : ''}
           </div>
@@ -633,10 +669,8 @@ function renderTaskCard(task) {
         ${hasScreenshot ? `
           <div class="thumbnail-container" data-task-id="${task.id}" data-screenshot-path="${task.screenshotPath}">
             <img class="thumbnail-img" style="${thumbnailStyle} display: none;" alt="Screenshot" />
-            <button class="thumbnail-delete-btn" title="Delete task">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 6L6 18M6 6l12 12"/>
-              </svg>
+            <button type="button" class="thumbnail-delete-btn" title="Delete task and files" aria-label="Delete task and files">
+              ${trashIcon}
             </button>
           </div>
         ` : ''}
@@ -688,17 +722,19 @@ function hideProjectMenu() {
 function updateToolsButtonState() {
   if (currentMode) {
     toolsBtn.classList.add('active');
-    toolsBtn.title = `${currentMode === 'comment' ? 'Comment' : 'Rectangle'} mode active`;
+    toolsBtn.title = currentMode === 'screen' ? 'Screen feedback open' :
+      `${currentMode === 'comment' ? 'Comment' : 'Rectangle'} mode active`;
   } else {
     toolsBtn.classList.remove('active');
-    toolsBtn.title = 'Tools';
+    toolsBtn.title = 'Add annotation';
   }
 
   // Update menu items
   toolsMenu.querySelectorAll('.menu-item').forEach(item => {
     const action = item.dataset.action;
     const isActive = (action === 'comment' && currentMode === 'comment') ||
-                     (action === 'rectangle' && currentMode === 'drawing');
+                     (action === 'rectangle' && currentMode === 'drawing') ||
+                     (action === 'screen' && currentMode === 'screen');
     item.classList.toggle('active', isActive);
   });
 }

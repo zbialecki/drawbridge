@@ -52,3 +52,49 @@ test('does not route an action if the active tab changed during lookup', async (
   expect(await pending).toBeNull();
   expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
 });
+
+function setupDeleteAction(response, confirmed = true) {
+  let onClick;
+  const button = { addEventListener(type, listener) { if (type === 'click') onClick = listener; } };
+  const card = {
+    dataset: { taskId: 'task-1' },
+    querySelector: () => null,
+    querySelectorAll: () => [button]
+  };
+  const context = vm.createContext({
+    taskContainer: { querySelectorAll: () => [card] },
+    confirm: jest.fn(() => confirmed),
+    sendToContentScript: jest.fn(async () => response),
+    showNotification: jest.fn()
+  });
+  const source = fs.readFileSync(require.resolve('./sidepanel.js'), 'utf8');
+  const start = source.indexOf('function addTaskEventListeners()');
+  vm.runInContext(source.slice(start, source.indexOf('// Load thumbnails', start)), context);
+  context.addTaskEventListeners();
+  return { context, click: () => onClick({ stopPropagation() {} }) };
+}
+
+test('deleting a task sends its ID after confirmation', async () => {
+  const { context, click } = setupDeleteAction({ success: true });
+  await click();
+  expect(context.sendToContentScript).toHaveBeenCalledWith({ type: 'DELETE_TASK', taskId: 'task-1' }, false);
+  expect(context.showNotification).not.toHaveBeenCalled();
+});
+
+test('canceling task deletion leaves the task unchanged', async () => {
+  const { context, click } = setupDeleteAction(null, false);
+  await click();
+  expect(context.sendToContentScript).not.toHaveBeenCalled();
+});
+
+test('a failed task deletion is reported to the user', async () => {
+  const { context, click } = setupDeleteAction({ success: false, error: 'Permission denied' });
+  await click();
+  expect(context.showNotification).toHaveBeenCalledWith('Could not delete task: Permission denied', 'error');
+});
+
+test('a disconnected page reports that deletion did not complete', async () => {
+  const { context, click } = setupDeleteAction(null);
+  await click();
+  expect(context.showNotification).toHaveBeenCalledWith('Could not delete task: Please refresh the page and try again.', 'error');
+});

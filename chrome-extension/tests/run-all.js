@@ -1,5 +1,5 @@
 /**
- * Run All V2 Tests (Node.js)
+ * Run the extension test suites (Node.js)
  *
  * Sets up globals to match browser environment, then loads and runs each test file.
  */
@@ -23,7 +23,7 @@ global.window.showDirectoryPicker = global.showDirectoryPicker;
 //    The modules use `module.exports` in Node.js, so require() returns
 //    the exports but never sets window.*. We bridge that here.
 try {
-  const taskStoreModule = require('../../utils/taskStore.js');
+  const taskStoreModule = require('../utils/taskStore.js');
   global.window.MoatTaskStore = taskStoreModule;
   console.log('✅ Loaded: MoatTaskStore');
 } catch (e) {
@@ -32,7 +32,7 @@ try {
 }
 
 try {
-  const markdownModule = require('../../utils/markdownGenerator.js');
+  const markdownModule = require('../utils/markdownGenerator.js');
   global.window.MoatMarkdownGenerator = markdownModule;
   console.log('✅ Loaded: MoatMarkdownGenerator');
 } catch (e) {
@@ -41,7 +41,7 @@ try {
 }
 
 try {
-  const persistenceModule = require('../../utils/persistence.js');
+  const persistenceModule = require('../utils/persistence.js');
   global.window.MoatPersistence = persistenceModule.MoatPersistence;
   console.log('✅ Loaded: MoatPersistence');
 } catch (e) {
@@ -50,7 +50,7 @@ try {
 }
 
 try {
-  const safeStorageModule = require('../../utils/safeStorage.js');
+  const safeStorageModule = require('../utils/safeStorage.js');
   global.window.MoatSafeStorage = safeStorageModule.MoatSafeStorage;
   console.log('✅ Loaded: MoatSafeStorage');
 } catch (e) {
@@ -64,11 +64,11 @@ const testFiles = [
   './tasks.test.js',
   './markdown.test.js',
   './filesystem.test.js',
-  './v2-architecture.test.js'
+  './architecture.test.js'
 ];
 
 (async function main() {
-  console.log('\n🚀 Drawbridge V2 Test Suite');
+  console.log('\n🚀 Drawbridge Test Suite');
   console.log('='.repeat(60));
   console.log(`Running ${testFiles.length} test files...\n`);
 
@@ -151,7 +151,7 @@ const testFiles = [
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   let commit = 'unknown';
   try {
-    commit = require('child_process').execSync('git rev-parse --short HEAD', { cwd: pathMod.resolve(__dirname, '../../../') }).toString().trim();
+    commit = require('child_process').execSync('git rev-parse --short HEAD', { cwd: pathMod.resolve(__dirname, '../../') }).toString().trim();
   } catch(e) {}
   const resultsDir = pathMod.resolve(__dirname, 'results');
   if (!fs.existsSync(resultsDir)) fs.mkdirSync(resultsDir, { recursive: true });
@@ -160,7 +160,6 @@ const testFiles = [
   let md = `# Unit Test Results\n\n`;
   md += `- **Date:** ${new Date().toISOString()}\n`;
   md += `- **Commit:** ${commit}\n`;
-  md += `- **Branch:** v2\n`;
   md += `- **Total:** ${totalTests} | **Passed:** ${totalPassed} | **Failed:** ${totalFailed} | **Skipped:** ${totalSkipped}\n`;
   md += `- **Pass Rate:** ${passRate}%\n\n`;
 

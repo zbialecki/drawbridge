@@ -1,8 +1,8 @@
-# Drawbridge V2 Test Framework
+# Drawbridge Test Framework
 
 ## Overview
 
-This is a lightweight test framework for Drawbridge V2 that runs without npm dependencies. It provides comprehensive coverage of all Jobs-to-be-Done (JTBD) extracted from the V1 codebase.
+This directory contains a lightweight test framework for Drawbridge that runs without npm dependencies, alongside the extension's Jest integration tests.
 
 ## Architecture
 
@@ -40,90 +40,31 @@ This is a lightweight test framework for Drawbridge V2 that runs without npm dep
    - Comment truncation
    - File writing
 
-4. **`run-all.js`**
+4. **`filesystem.test.js`**
+   - File System Access and persistence
+
+5. **`architecture.test.js`**
+   - Side panel and extension message passing
+
+6. **`run-all.js`**
    - Entry point for running all tests
-   - Generates comprehensive report
-   - Updates JTBD status
+   - Generates a Markdown report
 
 ## Running Tests
 
-### Option 1: Browser Console (Recommended)
+### Node.js
 
-1. Open your browser and navigate to a page
-2. Load the utility files first (in order):
-   ```javascript
-   // Load utilities
-   // These should be loaded via content_script.js normally
-   // For testing, load them manually or ensure they're available
-   ```
-
-3. Load test framework:
-   ```html
-   <script src="tests/v2/chrome-mock.js"></script>
-   <script src="tests/v2/test-runner.js"></script>
-   ```
-
-4. Load test files:
-   ```html
-   <script src="tests/v2/connection.test.js"></script>
-   <script src="tests/v2/tasks.test.js"></script>
-   <script src="tests/v2/markdown.test.js"></script>
-   ```
-
-5. Run all tests:
-   ```html
-   <script src="tests/v2/run-all.js"></script>
-   ```
-
-### Option 2: Node.js Environment
+From the repository root, run the five lightweight suites with:
 
 ```bash
-# Install Node.js if not already installed
-# No npm packages needed!
-
-# Run tests
-node tests/v2/run-all.js
+node chrome-extension/tests/run-all.js
 ```
 
-Note: You'll need to load the utility modules (taskStore.js, markdownGenerator.js, etc.) before running tests.
+The runner loads the extension utilities and writes a report under `chrome-extension/tests/results/`. The repository's Jest suites can be run separately with `npm test`.
 
-### Option 3: Test HTML Page
+### Browser and manual runners
 
-Create `tests/v2/test-runner.html`:
-
-```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Drawbridge V2 Tests</title>
-</head>
-<body>
-  <h1>Drawbridge V2 Test Runner</h1>
-  <p>Open console to see test results...</p>
-
-  <!-- Load utilities (adjust paths as needed) -->
-  <script src="../../utils/safeStorage.js"></script>
-  <script src="../../utils/taskStore.js"></script>
-  <script src="../../utils/markdownGenerator.js"></script>
-  <script src="../../utils/persistence.js"></script>
-  
-  <!-- Load test framework -->
-  <script src="chrome-mock.js"></script>
-  <script src="test-runner.js"></script>
-  
-  <!-- Load tests -->
-  <script src="connection.test.js"></script>
-  <script src="tasks.test.js"></script>
-  <script src="markdown.test.js"></script>
-  
-  <!-- Run all tests -->
-  <script src="run-all.js"></script>
-</body>
-</html>
-```
-
-Then open in browser: `file:///path/to/tests/v2/test-runner.html`
+`test-runner.html` is an older browser runner. Its test scripts currently conflict over shared global names, so use the Node.js runner above for the complete suite. `manual-test.js` is a separate Chromium-based check; it requires `puppeteer-core` and a Chromium executable at the path configured in that script.
 
 ## Test Structure
 
@@ -180,7 +121,7 @@ expect(value).not.toBe(expected)
 
 ## Adding New Tests
 
-1. **Identify the JTBD** from `JOBS-TO-BE-DONE.md`
+1. **Identify the behavior** the test should cover
 2. **Create or add to test file** for the appropriate category
 3. **Write test case**:
    ```javascript
@@ -199,7 +140,6 @@ expect(value).not.toBe(expected)
    ```
 4. **Update `run-all.js`** if needed to include new test file
 5. **Run tests** and verify
-6. **Update JTBD status** in `JOBS-TO-BE-DONE.md`
 
 ## Debugging Tests
 
@@ -227,27 +167,19 @@ console.log(results.stats);
 console.log(results.failedTests);
 ```
 
-## Coverage Goals
-
-- **161 total JTBDs** identified from V1 codebase
-- **~135 V2-applicable JTBDs** (excluding V1 sidebar-specific)
-- **Target: 80%+ coverage** for V2 migration
-
 ## Current Status
 
 Run tests to see current status. Results will show:
 - ✅ Passing tests
 - ❌ Failing tests
 - ⏳ Not yet tested
-- 🚫 Not applicable to V2
 
 ## Continuous Testing
 
-For V2 development:
+For development:
 1. Write tests BEFORE implementing features (TDD)
 2. Run tests AFTER each change
-3. Update JTBD status as tests pass
-4. Aim for 100% pass rate before V2 release
+3. Keep the suite passing as behavior changes
 
 ## Troubleshooting
 

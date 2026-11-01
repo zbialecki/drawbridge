@@ -1,8 +1,8 @@
 /**
- * V2 Architecture Tests
- * Tests for V2-specific message passing and Side Panel integration
+ * Architecture Tests
+ * Tests for message passing and Side Panel integration
  * 
- * V2 Architecture:
+ * Architecture:
  * - Side Panel (sidepanel.js) - UI layer, message passing only
  * - Background Script (background.js) - message relay between side panel and content script
  * - Content Script (content_script.js) - File System Access API operations
@@ -489,5 +489,5 @@ describe('V2-07: Message type constants', () => {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = runner;
 } else {
-  window.v2ArchitectureTestRunner = runner;
+  window.architectureTestRunner = runner;
 }

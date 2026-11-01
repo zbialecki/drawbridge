@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Drawbridge V2 Test Runner</title>
+  <title>Drawbridge Test Runner</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -89,7 +89,7 @@
   </style>
 </head>
 <body>
-  <h1>🧪 Drawbridge V2 Test Runner</h1>
+  <h1>🧪 Drawbridge Test Runner</h1>
   
   <div class="status">
     <h2>📦 Module Status</h2>
@@ -116,10 +116,10 @@
   </div>
 
   <!-- Load utilities (from parent directories) -->
-  <script src="../../utils/safeStorage.js"></script>
-  <script src="../../utils/taskStore.js"></script>
-  <script src="../../utils/markdownGenerator.js"></script>
-  <script src="../../utils/persistence.js"></script>
+  <script src="../utils/safeStorage.js"></script>
+  <script src="../utils/taskStore.js"></script>
+  <script src="../utils/markdownGenerator.js"></script>
+  <script src="../utils/persistence.js"></script>
   
   <!-- Load test framework -->
   <script src="chrome-mock.js"></script>
@@ -130,7 +130,7 @@
   <script src="tasks.test.js"></script>
   <script src="markdown.test.js"></script>
   <script src="filesystem.test.js"></script>
-  <script src="v2-architecture.test.js"></script>
+  <script src="architecture.test.js"></script>
   
   <script>
     // Capture console.log output
@@ -204,7 +204,7 @@
       clearConsoleOutput();
       
       try {
-        console.log('🚀 Starting Drawbridge V2 Test Suite\n');
+        console.log('🚀 Starting Drawbridge Test Suite\n');
         
         // Setup mocks
         const mocks = setupMocks();
@@ -230,16 +230,16 @@
         await filesystemTestRunner.run();
         const filesystemResults = filesystemTestRunner.getResults();
         
-        // Run V2 architecture tests
-        console.log('\n📦 Running V2 Architecture & Message Passing Tests...');
-        await v2ArchitectureTestRunner.run();
-        const v2Results = v2ArchitectureTestRunner.getResults();
+        // Run architecture tests
+        console.log('\n📦 Running Architecture & Message Passing Tests...');
+        await architectureTestRunner.run();
+        const architectureResults = architectureTestRunner.getResults();
         
         // Calculate totals
-        const totalTests = connectionResults.stats.total + taskResults.stats.total + markdownResults.stats.total + filesystemResults.stats.total + v2Results.stats.total;
-        const totalPassed = connectionResults.stats.passed + taskResults.stats.passed + markdownResults.stats.passed + filesystemResults.stats.passed + v2Results.stats.passed;
-        const totalFailed = connectionResults.stats.failed + taskResults.stats.failed + markdownResults.stats.failed + filesystemResults.stats.failed + v2Results.stats.failed;
-        const totalSkipped = connectionResults.stats.skipped + taskResults.stats.skipped + markdownResults.stats.skipped + filesystemResults.stats.skipped + v2Results.stats.skipped;
+        const totalTests = connectionResults.stats.total + taskResults.stats.total + markdownResults.stats.total + filesystemResults.stats.total + architectureResults.stats.total;
+        const totalPassed = connectionResults.stats.passed + taskResults.stats.passed + markdownResults.stats.passed + filesystemResults.stats.passed + architectureResults.stats.passed;
+        const totalFailed = connectionResults.stats.failed + taskResults.stats.failed + markdownResults.stats.failed + filesystemResults.stats.failed + architectureResults.stats.failed;
+        const totalSkipped = connectionResults.stats.skipped + taskResults.stats.skipped + markdownResults.stats.skipped + filesystemResults.stats.skipped + architectureResults.stats.skipped;
         const passRate = totalTests > 0 ? ((totalPassed / totalTests) * 100).toFixed(1) : 0;
         
         // Display results
@@ -257,7 +257,7 @@
             <li><strong>Task Management Tests:</strong> ${taskResults.stats.passed}/${taskResults.stats.total} passing</li>
             <li><strong>Markdown Generation Tests:</strong> ${markdownResults.stats.passed}/${markdownResults.stats.total} passing</li>
             <li><strong>File System Tests:</strong> ${filesystemResults.stats.passed}/${filesystemResults.stats.total} passing</li>
-            <li><strong>V2 Architecture Tests:</strong> ${v2Results.stats.passed}/${v2Results.stats.total} passing</li>
+            <li><strong>Architecture Tests:</strong> ${architectureResults.stats.passed}/${architectureResults.stats.total} passing</li>
           </ul>
           
           ${totalFailed === 0 ? '<p style="color: #10b981; font-weight: bold;">🎉 All tests passed!</p>' : '<p style="color: #ef4444; font-weight: bold;">⚠️  Some tests failed. Check console for details.</p>'}

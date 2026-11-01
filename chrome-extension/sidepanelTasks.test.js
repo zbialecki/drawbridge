@@ -10,7 +10,7 @@ async function setup() {
   taskStore.initialize(fixture.directory);
   for (const id of ['one', 'two']) {
     await taskStore.saveAnnotation({ id, timestamp: new Date(2026, 10, 1, 15, 42).getTime(), content: id,
-      screenshot: 'data:image/png;base64,eA==' }, { title: id, comment: `${id} comment` });
+      screenshot: 'data:image/png;base64,eA==', pastedImages: ['data:image/png;base64,eA=='] }, { title: id, comment: `${id} comment` });
   }
   const context = vm.createContext({ taskStore, window: { directoryHandle: fixture.directory, dispatchEvent: jest.fn() }, CustomEvent: class {} });
   vm.runInContext(source.slice(source.indexOf('  async function updateTaskStatusFromSidePanel('), source.indexOf('  // Get count of screenshots')), context);
@@ -22,11 +22,21 @@ test('deleting a task removes its annotation folder, not another task', async ()
   const { context, taskStore } = await setup();
   const first = taskStore.getTaskById('one').folderName;
   const second = taskStore.getTaskById('two').folderName;
+  for (const file of ['screenshot.png', 'metadata.json', 'comment.md', 'reference-1.png']) {
+    expect(fixture.exists(`${first}/${file}`)).toBe(true);
+  }
   await context.deleteTaskFromSidePanel('one');
   expect(taskStore.tasks.map(t => t.id)).toEqual(['two']);
   expect(fixture.exists(first)).toBe(false);
   expect(JSON.parse(fixture.read(`${second}/metadata.json`)).comment).toBe('two comment');
   expect(fixture.exists('moat-tasks-detail.json')).toBe(false);
+});
+
+test('a missing task reports an error instead of signaling a successful deletion', async () => {
+  const { context, taskStore } = await setup();
+  await expect(context.deleteTaskFromSidePanel('missing')).rejects.toThrow('Task not found');
+  expect(taskStore.tasks).toHaveLength(2);
+  expect(context.window.dispatchEvent).not.toHaveBeenCalled();
 });
 
 test('changing status keeps the annotation comment and metadata consistent', async () => {

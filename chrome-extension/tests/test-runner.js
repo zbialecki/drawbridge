@@ -1,5 +1,5 @@
 /**
- * Simple Test Runner for Drawbridge V2
+ * Simple Test Runner for Drawbridge
  * 
  * Provides a minimal test framework without npm dependencies.
  * Inspired by Jest/Mocha but simplified for browser environment.

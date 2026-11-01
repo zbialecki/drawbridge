@@ -445,7 +445,7 @@ class TaskStore {
 
     /**
      * Remove task by ID and automatically save to file
-     * Also deletes the associated screenshot file if it exists
+     * Also deletes associated images that are not referenced by another task
      * @param {string} id - Task ID to remove
      * @returns {Promise<boolean>} Promise resolving to removal success status
      */
@@ -458,9 +458,18 @@ class TaskStore {
             return false;
         }
 
-        // Delete screenshot file if it exists
-        if (task.screenshotPath && this.directoryHandle) {
-            await this.deleteScreenshotFile(task.screenshotPath);
+        const normalizeImagePath = imagePath => typeof imagePath === 'string' ? imagePath.replace(/^\.\//, '') : imagePath;
+        const imagePaths = new Set([
+            task.screenshotPath,
+            ...(Array.isArray(task.attachments) ? task.attachments : [])
+        ].filter(Boolean).map(normalizeImagePath));
+
+        for (const imagePath of imagePaths) {
+            const shared = this.tasks.some(other => other.id !== id && (
+                normalizeImagePath(other.screenshotPath) === imagePath ||
+                (Array.isArray(other.attachments) && other.attachments.some(path => normalizeImagePath(path) === imagePath))
+            ));
+            if (!shared) await this.deleteScreenshotFile(imagePath, { throwOnError: true });
         }
 
         // Remove the task from memory
@@ -477,23 +486,23 @@ class TaskStore {
     /**
      * Delete a screenshot file from the filesystem
      * @param {string} screenshotPath - Relative path to screenshot (e.g., "./screenshots/task-id.png")
+     * @param {Object} [options] - Deletion options
+     * @param {boolean} [options.throwOnError=false] - Fail when an image cannot be deleted
      * @returns {Promise<boolean>} Promise resolving to deletion success status
      */
-    async deleteScreenshotFile(screenshotPath) {
+    async deleteScreenshotFile(screenshotPath, { throwOnError = false } = {}) {
         if (!this.directoryHandle) {
+            if (throwOnError) throw new Error('Cannot delete image: no directory handle');
             console.warn('Cannot delete screenshot: no directory handle');
             return false;
         }
 
         try {
-            // Parse the path to get the filename
-            // screenshotPath format: "./screenshots/filename.png"
-            const fileName = screenshotPath.replace(/^\.\/screenshots\//, '');
-
-            if (!fileName || fileName === screenshotPath) {
-                console.warn(`Invalid screenshot path format: ${screenshotPath}`);
-                return false;
+            const match = typeof screenshotPath === 'string' && /^(?:\.\/)?screenshots\/([^/\\]+)$/.exec(screenshotPath);
+            if (!match || match[1] === '.' || match[1] === '..') {
+                throw new Error(`Invalid screenshot path format: ${screenshotPath}`);
             }
+            const fileName = match[1];
 
             // Get the screenshots directory
             const screenshotsDir = await this.directoryHandle.getDirectoryHandle('screenshots', { create: false });
@@ -507,6 +516,7 @@ class TaskStore {
                 console.warn(`Screenshot file not found: ${screenshotPath}`);
             } else {
                 console.error(`Error deleting screenshot file:`, error);
+                if (throwOnError) throw error;
             }
             return false;
         }

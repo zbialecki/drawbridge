@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const { AnnotationStore } = require('../chrome-extension/utils/annotationStore');
 const { directoryFixture } = require('../chrome-extension/tests/directory-handle');
-const { readAnnotations, processAnnotations } = require('./moat-watcher');
+const { readAnnotations, processAnnotations } = require('./drawbridge-watcher');
 let fixture;
 beforeEach(() => { fixture = directoryFixture(); jest.spyOn(console, 'log').mockImplementation(() => {}); });
 afterEach(() => { fixture.cleanup(); jest.restoreAllMocks(); });

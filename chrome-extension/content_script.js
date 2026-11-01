@@ -63,6 +63,9 @@
   let commentMode = false;
   let hoveredElement = null;
   let commentBox = null;
+  let screenBackdrop = null;
+  let screenCapturePending = false;
+  let annotationCapturePending = false;
   let highlightedElement = null;
   let deepSelectIndex = 0;
   let pickStack = [];
@@ -528,10 +531,13 @@
    * @returns {Promise<{dataUrl: string, viewport: Object}|null>}
    */
   async function captureScreenshotNative(captureArea, padding = 100) {
+    const runtime = globalThis.chrome?.runtime;
+    if (!runtime?.sendMessage) return null;
+
     return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ type: 'CAPTURE_SCREENSHOT' }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.warn('Screenshot message failed:', chrome.runtime.lastError);
+      runtime.sendMessage({ type: 'CAPTURE_SCREENSHOT' }, (response) => {
+        if (runtime.lastError) {
+          console.warn('Screenshot message failed:', runtime.lastError);
           resolve(null);
           return;
         }
@@ -589,6 +595,9 @@
 
         img.src = response.dataUrl;
       });
+    }).catch(error => {
+      console.warn('Screenshot message failed:', error);
+      return null;
     });
   }
 
@@ -2107,6 +2116,7 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
     
     // Fallback to simple notification with inline styles (for CSS isolation)
     const notification = document.createElement('div');
+    notification.setAttribute('data-drawbridge-notification', '');
     notification.textContent = message;
     notification.style.cssText = `
       position: fixed;
@@ -2739,6 +2749,8 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
       shakeCommentBox();
       return;
     }
+    if (screenCapturePending || annotationCapturePending) return;
+    annotationCapturePending = true;
     
     // Use the existing hover overlay for screenshot (already in DOM and positioned)
     // No need to create a new one - just wait a moment to ensure it's rendered
@@ -2774,6 +2786,8 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
       }
     } catch (e) {
       console.warn('Screenshot capture failed:', e);
+    } finally {
+      annotationCapturePending = false;
     }
     
     // Keep the DOM overlay visible while user is commenting
@@ -2955,10 +2969,181 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
       commentBox.remove();
       commentBox = null;
     }
+    if (screenBackdrop) {
+      screenBackdrop.remove();
+      screenBackdrop = null;
+    }
+  }
+
+  function closeScreenCommentBox() {
+    if (!screenBackdrop || commentBox?.isSubmitting) return;
+    const previousFocus = screenBackdrop.previousFocus;
+    removeCommentBox();
+    if (previousFocus?.isConnected && typeof previousFocus.focus === 'function') {
+      previousFocus.focus();
+    }
+    relayToSidePanel({ type: 'MODE_CHANGED', mode: null });
+  }
+
+  // Capture before showing the modal, so it does not appear in the image.
+  async function createScreenCommentBox() {
+    if (window.__drawbridgeNeedsRefresh) {
+      return { success: false, error: 'Refresh the page for the latest Drawbridge.' };
+    }
+    if (commentBox) {
+      shakeCommentBox();
+      return { success: false, error: 'Finish or cancel the current annotation first.' };
+    }
+    if (screenCapturePending || annotationCapturePending || isDrawing) {
+      return { success: false, error: 'Finish the current capture first.' };
+    }
+    if (document.hidden) {
+      return { success: false, error: 'Return to the page before capturing the screen.' };
+    }
+
+    screenCapturePending = true;
+    const previousFocus = document.activeElement;
+    const pageUrl = window.location.href;
+    const pageTitle = document.title;
+    const scrollPosition = { x: window.scrollX, y: window.scrollY };
+    const viewport = { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
+    let pageWasHidden = false;
+    const onVisibilityChange = () => { if (document.hidden) pageWasHidden = true; };
+    const notifications = [...document.querySelectorAll('[data-drawbridge-notification]')].map(node => ({
+      node, visibility: node.style.visibility
+    }));
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    try {
+      const previousMode = commentMode || drawingMode;
+      if (commentMode) exitCommentMode();
+      if (drawingMode) exitDrawingMode();
+      removeDrawingCanvas();
+      if (previousMode) relayToSidePanel({ type: 'MODE_CHANGED', mode: null });
+      for (const { node } of notifications) node.style.visibility = 'hidden';
+      // Let Chrome paint the removed selection overlay and hidden notifications.
+      await new Promise(resolve => setTimeout(resolve, 50));
+      if (pageWasHidden || document.hidden) {
+        return { success: false, error: 'The page changed during capture. Please try again.' };
+      }
+
+      const screenshotData = await captureScreenshotNative(viewport, 0);
+      if (!screenshotData?.dataUrl) {
+        return { success: false, error: 'Could not capture the screen. Please try again.' };
+      }
+      if (pageWasHidden || document.hidden || window.location.href !== pageUrl ||
+          window.innerWidth !== viewport.width || window.innerHeight !== viewport.height ||
+          window.scrollX !== scrollPosition.x || window.scrollY !== scrollPosition.y) {
+        return { success: false, error: 'The page changed during capture. Please try again.' };
+      }
+      if (commentBox || commentMode || drawingMode || isDrawing) {
+        if (commentBox) shakeCommentBox();
+        return { success: false, error: 'Finish or cancel the current annotation first.' };
+      }
+
+      screenBackdrop = document.createElement('div');
+      screenBackdrop.className = 'float-screen-backdrop';
+      screenBackdrop.previousFocus = previousFocus;
+      commentBox = document.createElement('div');
+      commentBox.className = 'float-comment-box float-screen-comment-box';
+      commentBox.setAttribute('role', 'dialog');
+      commentBox.setAttribute('aria-modal', 'true');
+      commentBox.setAttribute('aria-labelledby', 'float-screen-comment-title');
+      commentBox.innerHTML = `
+        <h2 id="float-screen-comment-title" class="float-screen-comment-title">Screen feedback</h2>
+        <textarea
+          class="float-comment-input"
+          aria-label="Describe what needs to be fixed"
+          placeholder="What needs to be fixed? (paste an image to attach a reference)"
+        ></textarea>
+        <div class="float-comment-attachments"></div>
+        <div class="float-comment-actions">
+          <button type="button" class="float-comment-cancel">Cancel</button>
+          <button type="button" class="float-comment-submit">Submit (Enter)</button>
+        </div>
+      `;
+      const box = commentBox;
+      const textarea = box.querySelector('textarea');
+      const submitBtn = box.querySelector('.float-comment-submit');
+      const cancelBtn = box.querySelector('.float-comment-cancel');
+      enablePasteImages(box, textarea);
+
+      const handleSubmit = async () => {
+        if (commentBox !== box || box.isSubmitting) return;
+        const content = textarea.value.trim() ||
+          (box.pastedImages?.length ? 'See pasted reference image(s).' : '');
+        if (!content) return;
+        const annotation = {
+          type: 'user_message',
+          role: 'user',
+          content,
+          target: null,
+          elementLabel: 'Screen',
+          selectorMethod: 'screen',
+          boundingRect: viewport,
+          pageUrl,
+          pageTitle,
+          scrollPosition,
+          timestamp: Date.now(),
+          sessionId,
+          status: 'to do',
+          id: box.annotationId || (box.annotationId = `moat-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`),
+          screenshot: screenshotData.dataUrl,
+          screenshotViewport: screenshotData.viewport,
+          pastedImages: [...box.pastedImages]
+        };
+        if (await submitCommentAnnotation(box, annotation) && commentBox === box) {
+          closeScreenCommentBox();
+        }
+      };
+
+      submitBtn.addEventListener('click', handleSubmit);
+      cancelBtn.addEventListener('click', closeScreenCommentBox);
+      textarea.addEventListener('keydown', (e) => {
+        if (e.isComposing || e.keyCode === 229) return;
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          handleSubmit();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          closeScreenCommentBox();
+        }
+      });
+      box.addEventListener('keydown', (e) => {
+        if (e.key !== 'Tab') return;
+        const active = (window.moatShadowRoot || document).activeElement;
+        if (e.shiftKey && active === textarea) {
+          e.preventDefault();
+          (submitBtn.disabled ? cancelBtn : submitBtn).focus();
+        } else if (!e.shiftKey && (active === submitBtn || (submitBtn.disabled && active === cancelBtn))) {
+          e.preventDefault();
+          textarea.focus();
+        }
+      });
+
+      screenBackdrop.appendChild(box);
+      (window.moatShadowRoot || document.body).appendChild(screenBackdrop);
+      relayToSidePanel({ type: 'MODE_CHANGED', mode: 'screen' });
+      setTimeout(() => { if (commentBox === box) textarea.focus(); }, 50);
+      return { success: true };
+    } catch (error) {
+      if (screenBackdrop) removeCommentBox();
+      console.error('Screen capture failed:', error);
+      return { success: false, error: 'Could not capture the screen. Please try again.' };
+    } finally {
+      for (const { node, visibility } of notifications) node.style.visibility = visibility;
+      screenCapturePending = false;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    }
   }
 
   // Enter comment mode
   function enterCommentMode() {
+    if (screenBackdrop || screenCapturePending) {
+      if (commentBox) shakeCommentBox();
+      return;
+    }
     if (window.__drawbridgeNeedsRefresh) {
       showNotification('Refresh page (Ctrl+Shift+R) for latest Drawbridge', 'error');
       return;
@@ -3040,6 +3225,10 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
 
   // Enter drawing mode
   function enterDrawingMode(toolName = 'rectangle') {
+    if (screenBackdrop || screenCapturePending) {
+      if (commentBox) shakeCommentBox();
+      return;
+    }
     if (drawingMode) return; // Already in drawing mode
     
     // Exit comment mode if active
@@ -3099,6 +3288,8 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
       shakeCommentBox();
       return;
     }
+    if (screenCapturePending || annotationCapturePending) return;
+    annotationCapturePending = true;
     
     // Capture screenshot with rectangle drawn on canvas
     let screenshotData = null;
@@ -3138,6 +3329,8 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
       }
     } catch (e) {
       console.warn('Screenshot capture failed:', e);
+    } finally {
+      annotationCapturePending = false;
     }
     
     // Create comment box
@@ -3854,6 +4047,12 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
 
   // Listen for keyboard events
   document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && screenBackdrop && !e.isComposing && e.keyCode !== 229) {
+      e.preventDefault();
+      closeScreenCommentBox();
+      return;
+    }
+
     // Exit drawing mode with Escape
     if (e.key === 'Escape' && drawingMode) {
       e.preventDefault();
@@ -3884,7 +4083,20 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
     // - If isDrawing is true, they're actively drawing a rectangle
     const hasStartedComment = commentBox !== null;
     const hasStartedDrawing = isDrawing === true;
-    const canSwitchTools = !hasStartedComment && !hasStartedDrawing;
+    const canSwitchTools = !hasStartedComment && !hasStartedDrawing &&
+      !screenCapturePending && !annotationCapturePending;
+
+    // Screen capture is a plain S only, never a browser shortcut or text input.
+    if ((e.key === 'S' || e.key === 's') && canSwitchTools && canUseShortcuts &&
+        !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat && !e.isComposing && e.keyCode !== 229 &&
+        !e.target.isContentEditable && !e.target.closest?.('[contenteditable], [role="textbox"]') &&
+        !e.target.matches('select')) {
+      e.preventDefault();
+      createScreenCommentBox().then(result => {
+        if (!result.success) showNotification(result.error, 'error');
+      });
+      return;
+    }
     
     // Toggle between Comment and Rectangle modes with C and R keys
     if ((e.key === 'R' || e.key === 'r') && canSwitchTools && canUseShortcuts) {
@@ -4371,19 +4583,40 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
       });
     }
 
+    else if (request.type === 'CAPTURE_SCREEN') {
+      createScreenCommentBox().then(sendResponse).catch(err => {
+        sendResponse({ success: false, error: err.message });
+      });
+    }
+
     else if (request.type === 'ENTER_COMMENT_MODE') {
+      if (screenBackdrop || screenCapturePending) {
+        if (commentBox) shakeCommentBox();
+        sendResponse({ success: false, error: 'Finish or cancel the current annotation first.' });
+        return true;
+      }
       enterCommentMode();
       relayToSidePanel({ type: 'MODE_CHANGED', mode: 'comment' });
       sendResponse({ success: true });
     }
 
     else if (request.type === 'ENTER_DRAWING_MODE') {
+      if (screenBackdrop || screenCapturePending) {
+        if (commentBox) shakeCommentBox();
+        sendResponse({ success: false, error: 'Finish or cancel the current annotation first.' });
+        return true;
+      }
       enterDrawingMode('rectangle');
       relayToSidePanel({ type: 'MODE_CHANGED', mode: 'drawing' });
       sendResponse({ success: true });
     }
 
     else if (request.type === 'EXIT_ANNOTATION_MODE') {
+      if (screenBackdrop || screenCapturePending) {
+        if (commentBox) shakeCommentBox();
+        sendResponse({ success: false, error: 'Finish or cancel the current annotation first.' });
+        return true;
+      }
       exitCommentMode();
       exitDrawingMode();
       relayToSidePanel({ type: 'MODE_CHANGED', mode: null });
@@ -4422,9 +4655,13 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
 
   // Helper to relay messages to side panel via background
   function relayToSidePanel(payload) {
-    chrome.runtime.sendMessage({ type: 'RELAY_TO_SIDEPANEL', payload }).catch(() => {
-      // Side panel might not be open
-    });
+    try {
+      globalThis.chrome?.runtime?.sendMessage({ type: 'RELAY_TO_SIDEPANEL', payload }).catch(() => {
+        // Side panel might not be open.
+      });
+    } catch {
+      // Reloaded extensions leave old page scripts without a usable runtime.
+    }
   }
 
   // Load tasks for side panel
@@ -4455,7 +4692,8 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
     if (!taskStore) {
       throw new Error('TaskStore not initialized');
     }
-    await taskStore.removeTaskAndSave(taskId);
+    const removed = await taskStore.removeTaskAndSave(taskId);
+    if (!removed) throw new Error('Task not found. Refresh and try again.');
     window.dispatchEvent(new CustomEvent('moat:tasks-updated'));
   }
 

@@ -1,5 +1,5 @@
 /**
- * Drawbridge V2 Manual Test via Puppeteer
+ * Drawbridge Manual Test via Puppeteer
  * 
  * Tests the extension loaded in Chromium with a self-contained test page.
  * Some features (Side Panel, File System Access) can't be fully automated
@@ -11,7 +11,7 @@ const path = require('path');
 const http = require('http');
 const fs = require('fs');
 
-const EXTENSION_PATH = path.resolve(__dirname, '../../');
+const EXTENSION_PATH = path.resolve(__dirname, '..');
 const RESULTS = [];
 
 function log(status, test, detail = '') {
@@ -48,7 +48,7 @@ function startTestServer() {
 }
 
 async function run() {
-  console.log('🚀 Drawbridge V2 Manual Test Suite');
+  console.log('🚀 Drawbridge Manual Test Suite');
   console.log('='.repeat(60));
   console.log(`Extension: ${EXTENSION_PATH}`);
 
@@ -128,7 +128,7 @@ async function run() {
     }
 
     // === TEST 3: Content script responds to ping via background relay ===
-    // In V2, content scripts run in Chrome's isolated world. The correct way to
+    // Content scripts run in Chrome's isolated world. The correct way to
     // verify injection is to ping the content script through chrome.tabs.sendMessage
     // from an extension page — the same relay the side panel uses in production.
     // IMPORTANT: We query by URL, not "active tab", because opening the side panel
@@ -181,7 +181,7 @@ async function run() {
     }
 
     // === TEST 4: Content script handles GET_CONNECTION_STATUS ===
-    // Verify the content script handles V2 message types correctly.
+    // Verify the content script handles message types correctly.
     // Query test tab by URL (not active tab — that would be the side panel page).
     try {
       if (extensionId) {
@@ -260,7 +260,7 @@ async function run() {
 
       const contentDetected = cssCheck.hasContentCss || cssCheck.hasContentCssRules;
       if (contentDetected && !cssCheck.hasMoatCss) {
-        log('PASS', 'T05: V2 content.css injected, moat.css removed', JSON.stringify(cssCheck));
+        log('PASS', 'T05: content.css injected, moat.css removed', JSON.stringify(cssCheck));
       } else if (cssCheck.hasMoatCss) {
         log('FAIL', 'T05: V1 moat.css still present', JSON.stringify(cssCheck));
       } else {
@@ -288,7 +288,7 @@ async function run() {
       log('FAIL', 'T06: No V1 moat sidebar check', e.message);
     }
 
-    // === TEST 7: Manifest has correct V2 configuration ===
+    // === TEST 7: Manifest has the expected configuration ===
     try {
       const manifestPath = path.join(EXTENSION_PATH, 'manifest.json');
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -304,12 +304,12 @@ async function run() {
       
       const allPass = Object.values(checks).every(v => v);
       if (allPass) {
-        log('PASS', 'T07: Manifest V2 configuration correct', JSON.stringify(checks));
+        log('PASS', 'T07: Manifest configuration correct', JSON.stringify(checks));
       } else {
-        log('FAIL', 'T07: Manifest V2 configuration', JSON.stringify(checks));
+        log('FAIL', 'T07: Manifest configuration', JSON.stringify(checks));
       }
     } catch (e) {
-      log('FAIL', 'T07: Manifest V2 configuration', e.message);
+      log('FAIL', 'T07: Manifest configuration', e.message);
     }
 
     // === TEST 8: Side Panel HTML exists and is well-formed ===
@@ -602,14 +602,14 @@ async function run() {
     
     // Save results to file
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const commit = require('child_process').execSync('git rev-parse --short HEAD', { cwd: path.resolve(__dirname, '../../../') }).toString().trim();
+    const commit = require('child_process').execSync('git rev-parse --short HEAD', { cwd: path.resolve(__dirname, '../../') }).toString().trim();
     const resultsDir = path.resolve(__dirname, 'results');
+    fs.mkdirSync(resultsDir, { recursive: true });
     const resultsFile = path.join(resultsDir, `manual-${timestamp}-${commit}.md`);
     
     let md = `# Manual Test Results\n\n`;
     md += `- **Date:** ${new Date().toISOString()}\n`;
     md += `- **Commit:** ${commit}\n`;
-    md += `- **Branch:** v2\n`;
     md += `- **Passed:** ${passed} | **Failed:** ${failed} | **Warned:** ${warned}\n`;
     md += `- **Pass Rate:** ${RESULTS.length > 0 ? ((passed / RESULTS.length) * 100).toFixed(1) : 0}%\n\n`;
     md += `## Results\n\n`;

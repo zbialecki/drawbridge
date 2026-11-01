@@ -9,7 +9,7 @@ Each annotation contains:
 - `screenshot.png`: the native viewport capture cropped around the selection, when capture succeeds.
 - `reference-N.ext`: any images pasted into the editor.
 
-Use `C` to annotate an element or `R` to draw a rectangle. Submit to save the folder; failures keep the editor and pasted images available for retry.
+Use `C` to annotate an element, `R` to draw a rectangle, or `S` to capture the visible viewport. Submit to save the folder; failures keep the editor and pasted images available for retry.
 
 Run `/bridge` in Claude Code, Codex, or Windsurf to process saved annotations. Choose `step bridge`, `batch bridge`, or `yolo bridge` to control approval and grouping. Image paths are relative to the annotation folder. Status progresses from `to do` to `doing` to `done`.
 
