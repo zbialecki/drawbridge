@@ -34,6 +34,23 @@ test('renders task data as text rather than HTML', async () => {
   expect(document.getElementById('todo-badge').textContent).toBe('1');
 });
 
+test('shows the page path or host before the relative time, with safe fallbacks', async () => {
+  const { read, context, document } = await setup();
+  const timestamp = Date.now();
+  context.__tasks = [
+    { id: 'path', pageUrl: 'http://localhost:3000/projects/47?secret=1#section', timestamp, status: 'to do' },
+    { id: 'root', pageUrl: 'https://example.com/', timestamp, status: 'to do' },
+    { id: 'missing', timestamp, status: 'to do' },
+    { id: 'invalid', pageUrl: 'not a url', pageTitle: '<img src=x onerror=alert(1)>', timestamp, status: 'to do' }
+  ];
+  read('isConnected = true; tasks = globalThis.__tasks; renderTasks();');
+  const headers = [...document.querySelectorAll('.task-time')];
+  expect(headers.map(header => header.textContent)).toEqual([
+    '/projects/47 · Just now', 'example.com · Just now', 'Just now', '<img src=x onerror=alert(1)> · Just now'
+  ]);
+  expect(headers[3].querySelector('img')).toBeNull();
+});
+
 test('page messages cannot change the connection or the task list', async () => {
   const { context, read } = await setup();
   const relayed = { sourceTabId: 1, sourceWindowId: 10 };

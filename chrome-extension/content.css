@@ -3,11 +3,11 @@
 
 /* Comment Mode Cursor */
 body.float-comment-mode {
-  cursor: pointer !important;
+  cursor: crosshair !important;
 }
 
 body.float-comment-mode * {
-  cursor: pointer !important;
+  cursor: crosshair !important;
 }
 
 /* Drawing Mode Cursor */

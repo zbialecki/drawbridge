@@ -704,6 +704,15 @@ function renderTaskCard(task) {
   const statusClass = (task.status || 'to do').toLowerCase().replace(' ', '-');
   const timestamp = task.timestamp || task.createdAt;
   const timeAgo = timestamp ? formatTime(timestamp) : '';
+  let page = typeof task.pageTitle === 'string' ? task.pageTitle : '';
+  try {
+    if (typeof task.pageUrl === 'string') {
+      const url = new URL(task.pageUrl);
+      page = url.pathname === '/' ? url.host || '/' : url.pathname;
+    }
+  } catch {
+    // Older or externally edited annotations may not have a valid URL.
+  }
   const hasScreenshot = !!task.screenshotPath;
   const isCompleted = task.status === 'done';
 
@@ -724,7 +733,7 @@ function renderTaskCard(task) {
       <div class="task-layout">
         <div class="task-content-area">
           <div class="task-header">
-            <span class="task-time">${timeAgo}</span>
+            <span class="task-time">${page ? `<span class="task-page" title="${escapeHtml(page)}">${escapeHtml(page)}</span>` : ''}${page && timeAgo ? ' · ' : ''}<span class="task-age">${escapeHtml(timeAgo)}</span></span>
             ${!hasScreenshot ? `
               <button type="button" class="delete-btn" title="Delete task and files" aria-label="Delete task and files">
                 ${trashIcon}
