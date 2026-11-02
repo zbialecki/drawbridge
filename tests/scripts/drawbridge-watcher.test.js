@@ -1,0 +1,53 @@
+jest.mock('node:child_process', () => ({ spawnSync: jest.fn() }));
+const fs = require('node:fs');
+const { spawnSync } = require('node:child_process');
+const { AnnotationStore } = require('../../chrome-extension/utils/annotationStore');
+const { directoryFixture } = require('../helpers/directory-handle');
+const { readAnnotations, processAnnotations } = require('../../scripts/drawbridge-watcher');
+const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+let fixture;
+beforeEach(() => {
+  fixture = directoryFixture();
+  Object.defineProperty(process, 'platform', { configurable: true, value: 'darwin' });
+  spawnSync.mockReturnValue({ status: 0 });
+  jest.spyOn(console, 'log').mockImplementation(() => {});
+});
+afterEach(() => {
+  try { fixture.cleanup(); }
+  finally {
+    Object.defineProperty(process, 'platform', originalPlatform);
+    jest.restoreAllMocks();
+  }
+});
+
+async function save(id, comment = 'Make it smaller') {
+  const store = new AnnotationStore();
+  store.initialize(fixture.directory);
+  return store.saveAnnotation({ id, timestamp: new Date(2026, 10, 1, 15, 42).getTime(), content: comment }, { title: 'Button', comment });
+}
+
+test('discovers annotations and stores clipboard receipts without copying them again', async () => {
+  const first = await save('one');
+  const second = await save('two');
+  expect(readAnnotations(fixture.root).map(entry => entry.metadata.id)).toEqual(['one', 'two']);
+  processAnnotations(fixture.root);
+  expect(spawnSync).toHaveBeenCalledTimes(2);
+  expect(spawnSync).toHaveBeenCalledWith('pbcopy', { input: expect.stringContaining(first.folderName), encoding: 'utf8' });
+  expect(JSON.parse(fixture.read(`${first.folderName}/watcher.json`)).id).toBe('one');
+  expect(JSON.parse(fixture.read(`${second.folderName}/watcher.json`)).id).toBe('two');
+  processAnnotations(fixture.root);
+  expect(spawnSync).toHaveBeenCalledTimes(2);
+  expect(fixture.exists('.moat')).toBe(false);
+});
+
+test('a failed clipboard command does not mark an annotation copied or change its metadata', async () => {
+  spawnSync.mockReturnValue({ status: 1, stderr: 'Clipboard unavailable' });
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  const task = await save('one', 'Keep this exact text');
+  const before = fixture.read(`${task.folderName}/metadata.json`);
+  processAnnotations(fixture.root);
+  expect(spawnSync).toHaveBeenCalledTimes(1);
+  expect(fixture.exists(`${task.folderName}/watcher.json`)).toBe(false);
+  expect(fixture.read(`${task.folderName}/metadata.json`)).toBe(before);
+  expect(fs.readdirSync(fixture.root)).toEqual([task.folderName]);
+});

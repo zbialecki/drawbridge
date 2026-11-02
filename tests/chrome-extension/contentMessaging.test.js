@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const vm = require('node:vm');
-const source = fs.readFileSync(require.resolve('./content_script.js'), 'utf8');
+const { sourceSection } = require('../helpers/test-utils');
+const source = fs.readFileSync(require.resolve('../../chrome-extension/content_script.js'), 'utf8');
 
 function setup(chrome = {}) {
   const task = { id: 'annotation-1', folderName: '26-11-01 15-42' };
@@ -13,24 +14,24 @@ function setup(chrome = {}) {
     showNotification: jest.fn(),
     console: { warn: jest.fn(), error: jest.fn() }
   });
-  vm.runInContext(source.slice(source.indexOf('  function relayToSidePanel('), source.indexOf('  // Load tasks for side panel')), context);
-  vm.runInContext(source.slice(source.indexOf('  async function captureScreenshotNative('), source.indexOf('  // Initialize when page loads')), context);
+  vm.runInContext(sourceSection(source, '  function relayToSidePanel(', '  // Load tasks for side panel'), context);
+  vm.runInContext(sourceSection(source, '  async function captureScreenshotNative(', '  // Initialize when page loads'), context);
   return { context, taskStore };
 }
 
 const area = { x: 10, y: 20, width: 30, height: 40 };
 
-test('a missing extension runtime does not throw when relaying an annotation update', () => {
+test('a missing extension runtime does not throw or reject when relaying an annotation update', async () => {
   const { context } = setup();
-  expect(() => context.relayToSidePanel({ type: 'TASK_UPDATED' })).not.toThrow();
+  await expect(Promise.resolve().then(() => context.relayToSidePanel({ type: 'TASK_UPDATED' }))).resolves.toBeUndefined();
 });
 
-test('a synchronous context-invalidation error does not escape the panel relay', () => {
+test('a context-invalidation error does not escape the panel relay', async () => {
   const { context } = setup({ runtime: { sendMessage() { throw new Error('Extension context invalidated.'); } } });
-  expect(() => context.relayToSidePanel({ type: 'TASK_UPDATED' })).not.toThrow();
+  await expect(Promise.resolve().then(() => context.relayToSidePanel({ type: 'TASK_UPDATED' }))).resolves.toBeUndefined();
 });
 
-test('an annotation already saved to disk is not reported as failed when the runtime disappears', async () => {
+test('successful storage is not reported as failed when the runtime disappears', async () => {
   const { context, taskStore } = setup();
   await expect(context.saveAnnotationWithNewSystem({ id: 'annotation-1' })).resolves.toBe(true);
   expect(taskStore.saveAnnotation).toHaveBeenCalledTimes(1);

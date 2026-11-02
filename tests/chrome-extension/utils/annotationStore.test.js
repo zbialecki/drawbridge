@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { AnnotationStore, timestampFolder } = require('./annotationStore');
-const { directoryFixture } = require('../tests/directory-handle');
+const { AnnotationStore, timestampFolder } = require('../../../chrome-extension/utils/annotationStore');
+const { directoryFixture } = require('../../helpers/directory-handle');
 
 const timestamp = new Date(2026, 10, 1, 15, 42, 38).getTime();
 const folder = '26-11-01 15-42';
@@ -48,19 +48,18 @@ test('saves a screenshot, complete comment, metadata and references together wit
   expect(fixture.exists('moat-tasks-detail.json')).toBe(false);
 });
 
-test('same-minute annotations get _2 and _3 instead of merging or overwriting', async () => {
-  for (const id of ['one', 'two', 'three']) await store.saveAnnotation(annotation(id), taskData);
-  expect(store.tasks.map(task => task.folderName)).toEqual([folder, `${folder}_2`, `${folder}_3`]);
-  expect(metadata().id).toBe('one');
-  expect(metadata(`${folder}_2`).id).toBe('two');
-  expect(metadata(`${folder}_3`).id).toBe('three');
-});
-
-test('the index resets next minute and continues beyond nine conflicts', async () => {
+test('same-minute conflicts remain distinct after reload, including indexes beyond nine', async () => {
   for (let index = 1; index <= 11; index++) await store.saveAnnotation(annotation(String(index)), taskData);
+  expect(metadata().id).toBe('1');
+  expect(metadata(`${folder}_2`).id).toBe('2');
+  expect(metadata(`${folder}_3`).id).toBe('3');
   expect(metadata(`${folder}_11`).id).toBe('11');
   const next = await store.saveAnnotation({ ...annotation('next'), timestamp: timestamp + 60000 }, taskData);
   expect(next.folderName).toBe('26-11-01 15-43');
+  const reloaded = new AnnotationStore();
+  reloaded.initialize(fixture.directory);
+  expect(await reloaded.loadTasksFromFile()).toHaveLength(12);
+  expect(reloaded.getTaskById('11').folderName).toBe(`${folder}_11`);
 });
 
 test('a file with the same name is also a conflict and stays untouched', async () => {
@@ -198,6 +197,8 @@ test('existing .moat annotations remain readable without migration or writes on 
   expect(fixture.read('.moat/moat-tasks-detail.json')).toBe(original);
   await store.updateTaskStatusAndSave('old', 'done');
   expect(JSON.parse(fixture.read('.moat/moat-tasks-detail.json'))[0].status).toBe('done');
+  expect(fixture.read('.moat/moat-tasks.md')).toContain('[x] Button');
+  expect(fixture.read('.moat/moat-tasks.md')).toContain('Make this button smaller.');
 });
 
 test('deleting a legacy task removes its files and description while preserving shared images', async () => {

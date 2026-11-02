@@ -1,5 +1,5 @@
-const manifest = require('./manifest.json');
-const { getContentScriptBuild } = require('./utils/buildInfo.js');
+const manifest = require('../../chrome-extension/manifest.json');
+const { getContentScriptBuild } = require('../../chrome-extension/utils/buildInfo.js');
 
 function getReadyPing(overrides = {}) {
   return {
@@ -16,9 +16,9 @@ function loadBackground({ sendMessage, insertCSS, executeScript } = {}) {
 
   global.self = global;
   global.importScripts = jest.fn(() => {
-    require('./utils/buildInfo.js');
+    require('../../chrome-extension/utils/buildInfo.js');
   });
-  require('./utils/buildInfo.js');
+  require('../../chrome-extension/utils/buildInfo.js');
 
   global.chrome = {
     sidePanel: { open: jest.fn(async () => {}) },
@@ -45,8 +45,16 @@ function loadBackground({ sendMessage, insertCSS, executeScript } = {}) {
     }
   };
 
-  return require('./background');
+  return require('../../chrome-extension/background');
 }
+
+afterEach(() => {
+  delete global.chrome;
+  delete global.self;
+  delete global.importScripts;
+  delete global.DrawbridgeBuildInfo;
+  jest.restoreAllMocks();
+});
 
 function failNextChromeCallback(message, callback) {
   chrome.runtime.lastError = { message };
@@ -83,6 +91,7 @@ describe('background action click handling', () => {
     await handleActionClick({ id: 7, url: 'https://example.com/' });
 
     expect(chrome.sidePanel.open).toHaveBeenCalledWith({ tabId: 7 });
+    expect(chrome.sidePanel.open.mock.invocationCallOrder[0]).toBeLessThan(sendMessage.mock.invocationCallOrder[0]);
     expect(sendMessage.mock.calls.map(call => call[1].action)).toEqual(['ping']);
     expect(chrome.scripting.insertCSS).not.toHaveBeenCalled();
     expect(chrome.scripting.executeScript).not.toHaveBeenCalled();
@@ -183,6 +192,7 @@ describe('background action click handling', () => {
     await handleActionClick({ id: 7, url: 'chrome://extensions/' });
 
     expect(sendMessage).not.toHaveBeenCalled();
+    expect(chrome.sidePanel.open).not.toHaveBeenCalled();
     expect(chrome.scripting.insertCSS).not.toHaveBeenCalled();
     expect(chrome.scripting.executeScript).not.toHaveBeenCalled();
   });
@@ -212,6 +222,31 @@ describe('background action click handling', () => {
   });
 });
 
+
+test('native capture uses the sender window and keeps the response channel open until capture finishes', () => {
+  loadBackground();
+  let reply;
+  chrome.tabs.captureVisibleTab.mockImplementation((windowId, options, callback) => { reply = callback; });
+  const handler = chrome.runtime.onMessage.addListener.mock.calls[0][0];
+  const respond = jest.fn();
+  expect(handler({ type: 'CAPTURE_SCREENSHOT' }, { tab: { id: 7, windowId: 3 } }, respond)).toBe(true);
+  expect(chrome.tabs.captureVisibleTab).toHaveBeenCalledWith(3, { format: 'png' }, expect.any(Function));
+  expect(respond).not.toHaveBeenCalled();
+  reply('data:image/png;base64,captured');
+  expect(respond).toHaveBeenCalledWith({ success: true, dataUrl: 'data:image/png;base64,captured' });
+});
+
+test('native capture reports permission errors instead of returning a successful screenshot', () => {
+  loadBackground();
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  chrome.tabs.captureVisibleTab.mockImplementation((windowId, options, callback) => {
+    failNextChromeCallback('Capture permission denied', callback);
+  });
+  const handler = chrome.runtime.onMessage.addListener.mock.calls[0][0];
+  const respond = jest.fn();
+  expect(handler({ type: 'CAPTURE_SCREENSHOT' }, { tab: { id: 7, windowId: 3 } }, respond)).toBe(true);
+  expect(respond).toHaveBeenCalledWith({ success: false, error: 'Capture permission denied' });
+});
 
 test('relay stamps source tab and window from sender rather than payload', () => {
   loadBackground();

@@ -114,11 +114,11 @@ Drawbridge also installs `.claude/commands/bridge.md`, `.windsurf/workflows/brid
 
 ```bash
 npm ci
-npm test -- chrome-extension/background.test.js --runInBand
+npm test
 npm run build
 ```
 
-The build output is written to `dist/drawbridge-v<version>.zip`.
+The build output is written to `dist/drawbridge-v<version>.zip`. Tests live in [`tests/`](tests/README.md), mirroring the source directories.
 
 For the optional clipboard watcher, run `node /path/to/drawbridge/scripts/drawbridge-watcher.js` from the selected output folder (or `npm run watch` when it is this repository's root). It reads timestamped annotations and keeps a `watcher.json` receipt inside each copied annotation's folder.
 

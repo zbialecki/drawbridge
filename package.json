@@ -18,10 +18,20 @@
     "cursor",
     "task-logging"
   ],
+  "jest": {
+    "clearMocks": true,
+    "restoreMocks": true,
+    "testMatch": ["<rootDir>/tests/**/*.test.js"],
+    "collectCoverageFrom": [
+      "chrome-extension/**/*.js",
+      "scripts/**/*.js"
+    ]
+  },
   "author": "",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^26.6.6",
-    "jest": "^30.5.2"
+    "jest": "^30.5.2",
+    "jsdom": "^26.1.0"
   }
 }

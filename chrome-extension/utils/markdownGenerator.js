@@ -159,6 +159,7 @@ function rebuildMarkdownFromJson(tasks) {
  * @returns {Promise<boolean>} Promise resolving to write success status
  */
 async function writeMarkdownToFile(markdownContent) {
+    let writable;
     try {
         if (typeof window !== 'undefined' && window.directoryHandle) {
             const fileHandle = await window.directoryHandle.getFileHandle('moat-tasks.md', { create: true });
@@ -176,7 +177,6 @@ async function writeMarkdownToFile(markdownContent) {
                 // Existence/read check is advisory only — fall through to write
             }
 
-            let writable;
             try {
                 writable = await fileHandle.createWritable({ mode: 'exclusive', keepExistingData: false });
             } catch (err) {
@@ -193,6 +193,7 @@ async function writeMarkdownToFile(markdownContent) {
             throw new Error('File System Access API not available or directoryHandle not set');
         }
     } catch (error) {
+        await writable?.abort?.().catch(() => {});
         console.error('Error writing markdown to file:', error);
         throw new Error(`Failed to write markdown: ${error.message}`);
     }

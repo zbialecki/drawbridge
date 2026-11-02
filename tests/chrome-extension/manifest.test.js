@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const manifest = require('./manifest.json');
-const { shouldExclude } = require('../scripts/build.js');
+const manifest = require('../../chrome-extension/manifest.json');
+const { shouldExclude } = require('../../scripts/build.js');
 
 function manifestResources() {
   return [
@@ -16,15 +16,17 @@ function manifestResources() {
 
 test('every extension resource named in the manifest exists', () => {
   for (const resource of manifestResources()) {
-    expect(fs.existsSync(path.join(__dirname, resource))).toBe(true);
+    expect(fs.statSync(path.resolve(__dirname, '../../chrome-extension', resource)).isFile()).toBe(true);
   }
 });
 
-test('the build includes every manifest resource while excluding development documentation', () => {
+test('the build includes runtime resources and excludes development or generated files', () => {
   expect(shouldExclude('README.md')).toBe(true);
   for (const resource of manifestResources()) {
     expect(shouldExclude(resource)).toBe(false);
   }
+  expect(['background.test.js', 'utils/annotationStore.test.js', '.moat/config.json']
+    .filter(resource => !shouldExclude(resource))).toEqual([]);
 });
 
 test('the annotation store loads after its dependencies and before the content script', () => {

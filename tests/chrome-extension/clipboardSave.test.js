@@ -1,9 +1,9 @@
 const fs = require('fs');
 const vm = require('vm');
-const { AnnotationStore } = require('./utils/annotationStore');
-const { directoryFixture } = require('./tests/directory-handle');
-const source = fs.readFileSync(require.resolve('./content_script.js'), 'utf8');
-const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
+const { sourceSection, deferred } = require('../helpers/test-utils');
+const { AnnotationStore } = require('../../chrome-extension/utils/annotationStore');
+const { directoryFixture } = require('../helpers/directory-handle');
+const source = fs.readFileSync(require.resolve('../../chrome-extension/content_script.js'), 'utf8');
 let fixture;
 function setup(failure) {
   fixture = directoryFixture();
@@ -15,8 +15,8 @@ function setup(failure) {
   const context = vm.createContext({ window: { directoryHandle: failure === 'disconnected' ? null : fixture.directory },
     taskStore, console: { log() {}, error() {} }, Date,
     saveAnnotationWithNewSystem: save, showNotification: jest.fn() });
-  vm.runInContext(section('  async function submitCommentAnnotation(', '  // Wire clipboard-image paste'), context);
-  vm.runInContext(section('  async function addToQueue(', '  // Get user-friendly element label'), context);
+  vm.runInContext(sourceSection(source, '  async function submitCommentAnnotation(', '  // Wire clipboard-image paste'), context);
+  vm.runInContext(sourceSection(source, '  async function addToQueue(', '  // Get user-friendly element label'), context);
   const button = { disabled: false };
   const box = { pastedImages: ['data:image/png;base64,eA=='], querySelector: () => button };
   const annotation = { id: 'test', content: 'Keep this comment', pastedImages: box.pastedImages,
@@ -58,12 +58,13 @@ test('a retry in a later minute keeps the original annotation folder', async () 
 
 test('prevents duplicate submissions during an outstanding save', async () => {
   const { context, box, annotation, save } = setup();
-  let finish;
-  save.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const started = deferred();
+  const saved = deferred();
+  save.mockImplementation(() => { started.resolve(); return saved.promise; });
   const first = context.submitCommentAnnotation(box, annotation);
+  await started.promise;
   expect(await context.submitCommentAnnotation(box, annotation)).toBe(false);
-  while (!finish) await Promise.resolve();
-  finish(true);
+  saved.resolve(true);
   expect(await first).toBe(true);
   expect(save).toHaveBeenCalledTimes(1);
 });

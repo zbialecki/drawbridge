@@ -1,4 +1,4 @@
-const { getContentScriptBuild, DRAWBRIDGE_FEATURE_BUILD } = require('./buildInfo.js');
+const { getContentScriptBuild, DRAWBRIDGE_FEATURE_BUILD } = require('../../../chrome-extension/utils/buildInfo.js');
 
 describe('buildInfo', () => {
   test('build id includes manifest version and feature tag', () => {

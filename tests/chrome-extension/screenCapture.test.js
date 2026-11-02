@@ -1,18 +1,12 @@
 const fs = require('node:fs');
 const vm = require('node:vm');
-const { AnnotationStore } = require('./utils/annotationStore');
-const { directoryFixture } = require('./tests/directory-handle');
+const { sourceSection: section, deferred } = require('../helpers/test-utils');
+const { AnnotationStore } = require('../../chrome-extension/utils/annotationStore');
+const { directoryFixture } = require('../helpers/directory-handle');
 
-const contentSource = fs.readFileSync(require.resolve('./content_script.js'), 'utf8');
-const panelSource = fs.readFileSync(require.resolve('./sidepanel/sidepanel.js'), 'utf8');
+const contentSource = fs.readFileSync(require.resolve('../../chrome-extension/content_script.js'), 'utf8');
+const panelSource = fs.readFileSync(require.resolve('../../chrome-extension/sidepanel/sidepanel.js'), 'utf8');
 const image = 'data:image/png;base64,eA==';
-
-function section(source, start, end) {
-  const from = source.indexOf(start);
-  const to = source.indexOf(end, from);
-  if (from < 0 || to < 0) throw new Error(`Could not find source section: ${start}`);
-  return source.slice(from, to);
-}
 
 function setupScreen() {
   const fixture = directoryFixture();
@@ -188,11 +182,13 @@ describe('screen feedback', () => {
 
   test('does not overwrite an existing annotation or launch two captures', async () => {
     setup = setupScreen();
-    let finish;
-    setup.context.captureScreenshotNative.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const started = deferred();
+    const captured = deferred();
+    setup.context.captureScreenshotNative.mockImplementation(() => { started.resolve(); return captured.promise; });
     const first = setup.context.createScreenCommentBox();
+    await started.promise;
     expect(await setup.context.createScreenCommentBox()).toEqual({ success: false, error: expect.stringContaining('current capture') });
-    finish({ dataUrl: image, viewport: { width: 1200, height: 800 } });
+    captured.resolve({ dataUrl: image, viewport: { width: 1200, height: 800 } });
     await first;
     const box = setup.context.commentBox;
     box.querySelector('textarea').value = 'A draft';
@@ -211,14 +207,15 @@ describe('screen feedback', () => {
 
   test('discards captures if the user switches tabs before capture completes', async () => {
     setup = setupScreen();
-    let finish;
-    setup.context.captureScreenshotNative.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const started = deferred();
+    const captured = deferred();
+    setup.context.captureScreenshotNative.mockImplementation(() => { started.resolve(); return captured.promise; });
     const pending = setup.context.createScreenCommentBox();
-    await Promise.resolve();
+    await started.promise;
     setup.document.hidden = true;
     setup.documentListeners.visibilitychange();
     setup.document.hidden = false;
-    finish({ dataUrl: image, viewport: { width: 1200, height: 800 } });
+    captured.resolve({ dataUrl: image, viewport: { width: 1200, height: 800 } });
     expect(await pending).toEqual({ success: false, error: expect.stringContaining('page changed') });
     expect(setup.context.commentBox).toBeNull();
     expect(setup.document.body.children).toHaveLength(0);
@@ -330,7 +327,7 @@ function setupPanel() {
     querySelectorAll: () => [], addEventListener(type, fn) { listeners[type] = fn; } };
   const chrome = { runtime: { onMessage: { addListener() {} } }, tabs: {} };
   const context = vm.createContext({ document, chrome, console, Map, Date, setTimeout });
-  vm.runInContext(panelSource, context);
+  vm.runInContext(`'use strict';\n${panelSource}`, context);
   vm.runInContext('contentScriptReady = true; activeTabId = 1; panelWindowId = 10;', context);
   context.sendToContentScript = jest.fn(async () => ({ success: true }));
   context.showNotification = jest.fn();

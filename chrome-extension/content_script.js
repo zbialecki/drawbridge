@@ -528,12 +528,12 @@
 
         // Clear the persisted connection
         if (window.moatPersistence) {
-          await window.moatPersistence.clearProjectConnection(origin);
+          await window.moatPersistence.removeDirectoryHandle(`project_${origin}`);
         }
 
         // Clear legacy storage too
         if (window.MoatSafeStorage) {
-          window.MoatSafeStorage.remove('moat.connection');
+          window.MoatSafeStorage.removeItem('moat.connection');
         }
 
         // Remove the disconnect flag
@@ -4376,13 +4376,13 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
 
           // Clear persisted handles from IndexedDB
           if (window.moatPersistence) {
-            await window.moatPersistence.clearProjectConnection(origin);
+            await window.moatPersistence.removeDirectoryHandle(`project_${origin}`);
             console.log('✅ Moat: IndexedDB persistence cleared');
           }
 
           // Clear legacy localStorage connection
           if (window.MoatSafeStorage) {
-            window.MoatSafeStorage.remove('moat.connection');
+            window.MoatSafeStorage.removeItem('moat.connection');
           }
           localStorage.removeItem(`moat.project.${origin}`);
           console.log('✅ Moat: localStorage cleared');

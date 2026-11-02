@@ -357,6 +357,7 @@ class TaskStore {
             throw new Error('TaskStore not initialized with directory handle');
         }
 
+        let writable;
         try {
             // Validate all tasks before writing
             this.tasks.forEach(task => validateTaskObject(task));
@@ -370,7 +371,6 @@ class TaskStore {
             // the target is held open by another editor.
             const fileHandle = await this.directoryHandle.getFileHandle('moat-tasks-detail.json', { create: true });
 
-            let writable;
             try {
                 writable = await fileHandle.createWritable({ mode: 'exclusive', keepExistingData: false });
             } catch (err) {
@@ -383,6 +383,7 @@ class TaskStore {
             console.log(`Successfully saved ${this.tasks.length} tasks to file`);
             return true;
         } catch (error) {
+            await writable?.abort?.().catch(() => {});
             console.error('Error saving tasks to file:', error);
             throw new Error(`Failed to save tasks: ${error.message}`);
         }

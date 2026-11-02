@@ -1,8 +1,9 @@
 const fs = require('fs');
 const vm = require('vm');
-const { AnnotationStore } = require('./utils/annotationStore');
-const { directoryFixture } = require('./tests/directory-handle');
-const source = fs.readFileSync(require.resolve('./content_script.js'), 'utf8');
+const { sourceSection } = require('../helpers/test-utils');
+const { AnnotationStore } = require('../../chrome-extension/utils/annotationStore');
+const { directoryFixture } = require('../helpers/directory-handle');
+const source = fs.readFileSync(require.resolve('../../chrome-extension/content_script.js'), 'utf8');
 let fixture;
 async function setup() {
   fixture = directoryFixture();
@@ -13,7 +14,7 @@ async function setup() {
       screenshot: 'data:image/png;base64,eA==', pastedImages: ['data:image/png;base64,eA=='] }, { title: id, comment: `${id} comment` });
   }
   const context = vm.createContext({ taskStore, window: { directoryHandle: fixture.directory, dispatchEvent: jest.fn() }, CustomEvent: class {} });
-  vm.runInContext(source.slice(source.indexOf('  async function updateTaskStatusFromSidePanel('), source.indexOf('  // Get count of screenshots')), context);
+  vm.runInContext(sourceSection(source, '  async function updateTaskStatusFromSidePanel(', '  // Get count of screenshots'), context);
   return { context, taskStore };
 }
 afterEach(() => { fixture?.cleanup(); fixture = null; });
@@ -51,7 +52,7 @@ test('native panel connections enable shortcuts only while connected', () => {
   let connect;
   let disconnect;
   const context = vm.createContext({ sidePanelConnections: 0, chrome: { runtime: { onConnect: { addListener(fn) { connect = fn; } } } } });
-  vm.runInContext(source.slice(source.indexOf('  chrome.runtime.onConnect.addListener('), source.indexOf('  window.__drawbridgeDebug =')), context);
+  vm.runInContext(sourceSection(source, '  chrome.runtime.onConnect.addListener(', '  window.__drawbridgeDebug ='), context);
   connect({ name: 'unrelated' });
   expect(context.sidePanelConnections).toBe(0);
   connect({ name: 'drawbridge-sidepanel', onDisconnect: { addListener(fn) { disconnect = fn; } } });

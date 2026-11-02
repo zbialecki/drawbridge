@@ -7,7 +7,7 @@ const {
   pickElementAtPoint,
   isControlKeyEvent,
   isDeepSelectControlActive
-} = require('./elementPicker.js');
+} = require('../../../chrome-extension/utils/elementPicker.js');
 
 function mockElement(tag, options = {}) {
   const classes = new Set(options.classes || []);

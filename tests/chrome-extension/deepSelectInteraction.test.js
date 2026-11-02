@@ -1,14 +1,14 @@
 const fs = require('fs');
 const vm = require('vm');
-const source = fs.readFileSync(require.resolve('./content_script.js'), 'utf8');
-const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
+const { sourceSection } = require('../helpers/test-utils');
+const source = fs.readFileSync(require.resolve('../../chrome-extension/content_script.js'), 'utf8');
 function setup() {
   let click;
   const context = vm.createContext({ document: { addEventListener(type, fn) { click = fn; } },
     commentMode: true, isEventInMoatUI: () => false, isDeepSelectModifier: e => !!e.ctrlKey,
     highlightedElement: null, drilledOnPointerdown: false, lastPointer: { x: 0, y: 0 },
     refreshPickAtPointer: jest.fn(), createCommentBox: jest.fn(), handleDeepSelectDrill: jest.fn() });
-  vm.runInContext(section('  // Click handler — plain click', '  // macOS: Ctrl+Click is remapped'), context);
+  vm.runInContext(sourceSection(source, '  // Click handler — plain click', '  // macOS: Ctrl+Click is remapped'), context);
   const event = { target: { id: 'button' }, clientX: 80, clientY: 60, preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} };
   return { context, click, event };
 }
@@ -45,12 +45,12 @@ test('Control click without pointerdown uses the click coordinates', () => {
 
 test('drilling refreshes an empty hover stack before choosing the next layer', () => {
   const top = { id: 'top' }, deep = { id: 'deep' };
-  const picker = require('./utils/elementPicker');
+  const picker = require('../../chrome-extension/utils/elementPicker');
   const api = { ...picker, pickElementAtPoint: jest.fn(() => ({ element: deep, depth: 2, total: 2 })) };
   const context = vm.createContext({ getElementPicker: () => api, pickStack: [], deepSelectIndex: 0,
     lastPointer: { x: 80, y: 60 }, showNotification: jest.fn(), console: { info() {}, warn() {} } });
   context.refreshPickAtPointer = jest.fn(() => { context.pickStack = [top, deep]; return deep; });
-  vm.runInContext(section('  function drillDeeperAtPointer()', '  // Trackpads often skip'), context);
+  vm.runInContext(sourceSection(source, '  function drillDeeperAtPointer()', '  // Trackpads often skip'), context);
   context.drillDeeperAtPointer();
   expect(context.deepSelectIndex).toBe(1);
   expect(context.refreshPickAtPointer).toHaveBeenCalledWith(80, 60);
