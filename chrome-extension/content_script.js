@@ -166,6 +166,35 @@
     return event.isTrusted;
   }
 
+  // Let the user move an open editor off whatever it covers. `translate` suits both the fixed and
+  // the centered editor, and leaves `transform` free for the shake animation.
+  function enableCommentBoxDrag(box) {
+    const handle = document.createElement('div');
+    handle.className = 'float-comment-drag-handle';
+    handle.title = 'Drag to move';
+    box.prepend(handle);
+
+    let offsetX = 0;
+    let offsetY = 0;
+    let drag = null;
+    // Keep the caret in the textarea while dragging.
+    handle.addEventListener('mousedown', e => e.preventDefault());
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      handle.setPointerCapture(e.pointerId);
+      drag = { pointerX: e.clientX, pointerY: e.clientY, offsetX, offsetY, rect: box.getBoundingClientRect() };
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      // The whole editor stays in the viewport so its handle can't be lost.
+      const { rect } = drag;
+      offsetX = drag.offsetX + Math.min(Math.max(e.clientX - drag.pointerX, -rect.left), window.innerWidth - rect.right);
+      offsetY = drag.offsetY + Math.min(Math.max(e.clientY - drag.pointerY, -rect.top), window.innerHeight - rect.bottom);
+      box.style.translate = `${offsetX}px ${offsetY}px`;
+    });
+    handle.addEventListener('lostpointercapture', () => { drag = null; });
+  }
+
   // Keep the editor and its images available when any part of the save fails.
   async function submitCommentAnnotation(box, annotation) {
     if (box.isSubmitting) return false;
@@ -674,6 +703,8 @@
       </div>
     `;
     
+    enableCommentBoxDrag(commentBox);
+
     // Append to shadow root for CSS isolation (if available), otherwise fallback to body
     const container = window.moatShadowRoot || document.body;
     container.appendChild(commentBox);
@@ -913,9 +944,8 @@
       commentBox.frameworkContext = frameworkContext;
       commentBox.setAttribute('role', 'dialog');
       commentBox.setAttribute('aria-modal', 'true');
-      commentBox.setAttribute('aria-labelledby', 'float-screen-comment-title');
+      commentBox.setAttribute('aria-label', 'Screen feedback');
       commentBox.innerHTML = `
-        <h2 id="float-screen-comment-title" class="float-screen-comment-title">Screen feedback</h2>
         <textarea
           class="float-comment-input"
           aria-label="Feedback description"
@@ -932,6 +962,7 @@
       const textarea = box.querySelector('textarea');
       const submitBtn = box.querySelector('.float-comment-submit');
       const cancelBtn = box.querySelector('.float-comment-cancel');
+      enableCommentBoxDrag(box);
       enablePasteImages(box, textarea);
 
       const handleSubmit = async () => {
@@ -1221,6 +1252,8 @@
       </div>
     `;
     
+    enableCommentBoxDrag(commentBox);
+
     // Append to shadow root for CSS isolation (if available), otherwise fallback to body
     const container = window.moatShadowRoot || document.body;
     container.appendChild(commentBox);

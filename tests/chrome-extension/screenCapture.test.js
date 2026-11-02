@@ -44,6 +44,7 @@ function setupScreen() {
     addEventListener(type, listener) { this.listeners[type] = listener; }
     dispatch(type, event = {}) { return this.listeners[type]?.(event); }
     appendChild(child) { this.children.push(child); child.parent = this; child.isConnected = true; }
+    prepend(child) { this.children.unshift(child); }
     replaceChildren() { this.children = []; }
     remove() {
       if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this);

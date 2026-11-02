@@ -25,6 +25,7 @@ test('dismissing a comment removes the highlight even after another page click',
       drilledOnPointerdown: false, getElementPicker: () => picker,
       isDeepSelectModifier: () => false, captureFrameworkContext: async () => null, captureScreenshotNative: jest.fn(async () => null),
       enablePasteImages: box => { box.pastedImages = []; },
+      enableCommentBoxDrag() {},
       setTimeout: callback => callback(), console: { log() {}, warn() {}, info() {}, error() {} }
     });
     vm.runInContext(sourceSection(source, '  // Create comment input box', '  // Remove comment box'), context);
@@ -67,6 +68,7 @@ test('cancelling during screenshot capture does not reopen the comment editor', 
       captureFrameworkContext: async () => null,
       captureScreenshotNative: () => { started.resolve(); return capture.promise; },
       enablePasteImages: box => { box.pastedImages = []; },
+      enableCommentBoxDrag() {},
       setTimeout: callback => callback(), console: { log() {}, warn() {}, error() {} }
     });
     vm.runInContext(sourceSection(source, '  // Create comment input box', '  // Remove comment box'), context);

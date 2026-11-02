@@ -45,7 +45,11 @@ async function openPanel(url = `${ORIGIN}/settings`) {
   const panel = dom.getInternalVMContext();
   panel.console = { log() {}, warn() {}, error() {} };
   panel.chrome = {
-    runtime: { id: 'drawbridge', onMessage: { addListener() {} } },
+    runtime: {
+      id: 'drawbridge', onMessage: { addListener() {} }, getURL: path => `chrome-extension://drawbridge/${path}`,
+      sendMessage: jest.fn(async () => {})
+    },
+    offscreen: { createDocument: jest.fn(async () => {}) },
     tabs: {
       query: async () => [tab],
       sendMessage: (id, message, callback) => callback({ ready: true }),
@@ -144,7 +148,8 @@ describe('connecting', () => {
     expect(view.connected()).toBe(false);
     expect(reuse.style.display).toBe('block');
     expect(reuse.textContent).toBe('Use project');
-    expect(view.document.getElementById('connect-btn').textContent).toBe('Choose folder');
+    expect(view.document.getElementById('connect-btn').style.display).toBe('none');
+    expect(view.document.getElementById('choose-btn').style.display).toBe('flex');
 
     view.click('reuse-btn');
     await until(view.connected);
@@ -153,6 +158,32 @@ describe('connecting', () => {
     expect(view.panel.showDirectoryPicker).not.toHaveBeenCalled();
     expect((await persistence.getAllHandles()).map(record => record.origin).sort()).toEqual([OTHER, ORIGIN].sort());
     expect(reuse.style.display).toBe('none');
+  });
+
+  test('the folder icon chooses a different folder instead of the offered one', async () => {
+    await persistence.persistProjectConnection(fixture.directory, 'project', OTHER);
+    const view = await openPanel();
+    view.click('choose-btn');
+    await until(view.connected);
+    expect(view.panel.showDirectoryPicker).toHaveBeenCalledTimes(1);
+    expect(view.document.getElementById('choose-btn').style.display).toBe('none');
+  });
+
+  test('a connected folder is held open for when the panel closes', async () => {
+    const view = await openPanel();
+    const { offscreen, runtime } = view.panel.chrome;
+    expect(offscreen.createDocument).not.toHaveBeenCalled();
+    view.click('connect-btn');
+    await until(view.connected);
+    await until(() => offscreen.createDocument.mock.calls.length);
+    expect(offscreen.createDocument.mock.calls[0][0].url).toBe('chrome-extension://drawbridge/offscreen/folderAccess.html');
+    expect(runtime.sendMessage).not.toHaveBeenCalled();
+
+    // Only one offscreen document can exist, so an open one is told to reload the folders.
+    offscreen.createDocument.mockRejectedValue(new Error('Only a single offscreen document may be created.'));
+    view.panel.holdFolderAccess();
+    await until(() => runtime.sendMessage.mock.calls.length);
+    expect(runtime.sendMessage).toHaveBeenCalledWith({ type: 'HOLD_FOLDERS' });
   });
 
   test('expired permission offers a reconnect and only prompts after the click', async () => {

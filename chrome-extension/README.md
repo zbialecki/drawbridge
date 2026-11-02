@@ -64,10 +64,11 @@ Run `/bridge` or `bridge`, optionally prefixed with `step`, `batch`, or `yolo`. 
 - `utils/annotationStore.js`: timestamp naming, per-annotation files, image loading, updates, and deletion.
 - `sidepanel/projectSetup.js`: installs the `/bridge` commands in a connected folder.
 - `utils/persistence.js`: remembered directory handles and permission checks, for extension pages only.
+- `offscreen/folderAccess.js`: hidden document that keeps folder access while the side panel is closed.
 - `rules-templates/bridge.md`: AI task-processing instructions.
 
 ## Troubleshooting
 
 - Reload the extension and refresh an already-open page after a storage-format update.
-- Reconnect from the project menu if Chrome's file permissions expire.
+- Click **Reconnect** in the panel header after restarting Chrome or reloading the extension.
 - For missing annotations, verify the selected output folder and check its timestamped directories.

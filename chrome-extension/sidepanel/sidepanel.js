@@ -36,6 +36,7 @@ const taskContainer = document.getElementById('task-container');
 const connectionBanner = document.getElementById('connection-banner');
 const connectBtn = document.getElementById('connect-btn');
 const reuseBtn = document.getElementById('reuse-btn');
+const chooseBtn = document.getElementById('choose-btn');
 const projectBtn = document.getElementById('project-btn');
 const projectMenu = document.getElementById('project-menu');
 const statusText = connectionBanner.querySelector('.status-text');
@@ -127,6 +128,22 @@ async function restoreFolder(epoch) {
   renderTasks();
 }
 
+// Keeps folder access after the panel closes, until Chrome restarts. See offscreen/folderAccess.js.
+async function holdFolderAccess() {
+  try {
+    await chrome.offscreen.createDocument({
+      url: chrome.runtime.getURL('offscreen/folderAccess.html'),
+      reasons: ['BLOBS'],
+      justification: 'Keep access to the connected project folder while the side panel is closed'
+    });
+  } catch {
+    // Only one can exist, so have the open one pick up the change.
+    await chrome.runtime.sendMessage({ type: 'HOLD_FOLDERS' }).catch(error => {
+      console.warn('Drawbridge: Could not keep folder access:', error);
+    });
+  }
+}
+
 async function openFolder(directoryHandle, path, origin) {
   const store = new window.DrawbridgeAnnotationStore.AnnotationStore();
   store.initialize(directoryHandle);
@@ -135,6 +152,7 @@ async function openFolder(directoryHandle, path, origin) {
   projectPath = path;
   folderOffer = null;
   updateConnectionBanner();
+  holdFolderAccess();
   if (!installedOrigins.has(origin)) {
     installedOrigins.add(origin);
     await window.DrawbridgeProjectSetup.installProjectFiles(directoryHandle);
@@ -201,6 +219,7 @@ function setupEventListeners() {
   // Connect buttons
   connectBtn.addEventListener('click', chooseFolder);
   reuseBtn.addEventListener('click', acceptFolderOffer);
+  chooseBtn.addEventListener('click', chooseFolder);
 
   // Project button (opens dropdown)
   projectBtn.addEventListener('click', (e) => {
@@ -216,6 +235,7 @@ function setupEventListeners() {
 
       if (action === 'disconnect') {
         await window.moatPersistence.removeProjectConnection(panelOrigin);
+        holdFolderAccess();
         annotationStore = null;
         isConnected = false;
         projectPath = '';
@@ -526,14 +546,16 @@ function updateConnectionBanner() {
   reuseBtn.style.display = offer ? 'block' : 'none';
   reuseBtn.textContent = offer ? `${offer.reconnect ? 'Reconnect' : 'Use'} ${offer.path}` : '';
   reuseBtn.title = reuseBtn.textContent;
-  connectBtn.textContent = offer ? 'Choose folder' : 'Connect Project';
-  connectBtn.classList.toggle('connect-btn-secondary', !!offer);
+  connectBtn.style.display = offer ? 'none' : '';
+  chooseBtn.style.display = offer ? 'flex' : 'none';
 }
 
 function setActiveTab(status) {
   currentTab = status;
   tabs.forEach(tab => {
-    tab.classList.toggle('active', tab.dataset.status === status);
+    const selected = tab.dataset.status === status;
+    tab.classList.toggle('active', selected);
+    tab.setAttribute('aria-pressed', selected);
   });
   renderTasks();
 }
@@ -779,11 +801,9 @@ function hideProjectMenu() {
 
 function updateToolsButtonState() {
   if (currentMode) {
-    toolsBtn.classList.add('active');
     toolsBtn.title = currentMode === 'screen' ? 'Screen feedback open' :
       `${currentMode === 'comment' ? 'Comment' : 'Rectangle'} mode active`;
   } else {
-    toolsBtn.classList.remove('active');
     toolsBtn.title = 'Add annotation';
   }
 

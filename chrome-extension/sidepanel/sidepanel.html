@@ -25,6 +25,11 @@
         <div id="connection-banner" class="connection-status disconnected">
           <button id="reuse-btn" class="connect-btn-primary connect-btn-reuse" style="display: none"></button>
           <button id="connect-btn" class="connect-btn-primary">Connect Project</button>
+          <button id="choose-btn" class="header-btn" title="Choose a different folder" aria-label="Choose a different folder" style="display: none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            </svg>
+          </button>
           <button id="project-btn" class="project-btn">
             <span class="status-dot"></span>
             <span class="status-text">project</span>
@@ -70,11 +75,11 @@
       </div>
     </div>
 
-    <!-- Tabs -->
-    <div class="tabs">
-      <button class="tab active" data-status="to do">Recorded <span class="badge" id="todo-badge">0</span></button>
-      <button class="tab" data-status="doing">In Progress <span class="badge" id="doing-badge">0</span></button>
-      <button class="tab" data-status="done">Done <span class="badge" id="done-badge">0</span></button>
+    <!-- Status toggle -->
+    <div class="tabs" role="group" aria-label="Show tasks by status">
+      <button class="tab active" data-status="to do" aria-pressed="true">Recorded <span class="badge" id="todo-badge">0</span></button>
+      <button class="tab" data-status="doing" aria-pressed="false">In Progress <span class="badge" id="doing-badge">0</span></button>
+      <button class="tab" data-status="done" aria-pressed="false">Done <span class="badge" id="done-badge">0</span></button>
     </div>
 
     <!-- Task list container -->

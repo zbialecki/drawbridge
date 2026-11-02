@@ -23,6 +23,7 @@ test.each(['comment', 'rectangle', 'screen'])('%s editor shows the updated promp
         dataUrl: 'data:image/png;base64,eA==', viewport: { ...viewport, padding }
       })),
       enablePasteImages: box => { box.pastedImages = []; },
+      enableCommentBoxDrag: jest.fn(),
       captureFrameworkContext: async () => null,
       isUserAction: () => true,
       submitCommentAnnotation, relayToSidePanel: jest.fn(),
@@ -43,6 +44,7 @@ test.each(['comment', 'rectangle', 'screen'])('%s editor shows the updated promp
       expect(await context.createScreenCommentBox()).toEqual({ success: true });
     }
 
+    expect(context.enableCommentBoxDrag).toHaveBeenCalledTimes(1);
     const textarea = window.document.querySelector('.float-comment-input');
     const submit = window.document.querySelector('.float-comment-submit');
     expect(textarea.placeholder).toBe('What needs to be changed? Markdown supported.');

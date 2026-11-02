@@ -160,6 +160,7 @@ For the optional clipboard watcher, run `node /path/to/drawbridge/scripts/drawbr
 - If the icon does nothing after reloading the extension, click it once on the page again. Drawbridge now injects missing scripts into existing tabs.
 - If the drawer looks stale, close and reopen it with the toolbar icon.
 - If project files are missing, reconnect the project from the drawer.
+- After restarting Chrome, click **Reconnect** in the drawer once to restore folder access.
 - If saving says to open the side panel, open the drawer on that tab and submit again. Your comment stays in the editor.
 - After upgrading from an earlier version, connect your project once more. Earlier versions kept folder access in each site's storage, and Drawbridge removes it.
 - If an AI tool cannot find tasks, point it to the selected output folder and its timestamped subfolders containing `metadata.json` and `comment.md`.

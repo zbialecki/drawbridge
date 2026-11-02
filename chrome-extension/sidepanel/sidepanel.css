@@ -7,6 +7,7 @@
   --header-control-height: 32px;
   --header-gap: 8px;
   --control-radius: 6px;
+  --toggle-inset: 2px;
   --card-padding: 6px;
   --card-border-width: 1px;
   --card-radius: var(--control-radius);
@@ -15,7 +16,7 @@
   --bg-secondary: #f9fafb;
   --bg-tertiary: #f3f4f6;
   --border: #e5e7eb;
-  --border-light: #f3f4f6;
+  --border-strong: #9ca3af;
   --text-primary: #1f2937;
   --text-secondary: #4b5563;
   --text-tertiary: #6b7280;
@@ -38,7 +39,7 @@
   --bg-secondary: #1f2937;
   --bg-tertiary: #374151;
   --border: #374151;
-  --border-light: #4b5563;
+  --border-strong: #6b7280;
   --text-primary: #f9fafb;
   --text-secondary: #e5e7eb;
   --text-tertiary: #d1d5db;
@@ -132,13 +133,7 @@ body {
 .header-btn:hover {
   background: var(--bg-secondary);
   color: var(--text-secondary);
-  border-color: var(--border-light);
-}
-
-.header-btn.active {
-  background: var(--accent-light);
-  color: var(--accent);
-  border-color: var(--accent-border);
+  border-color: var(--border-strong);
 }
 
 .header-btn:disabled,
@@ -154,27 +149,51 @@ body {
   flex-shrink: 0;
 }
 
-/* Tabs */
+/* Status toggle */
 .tabs {
-  display: flex;
-  padding: var(--panel-inset) var(--panel-inset) 0;
-  gap: 4px;
-  background: var(--bg-primary);
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: var(--panel-inset) var(--panel-inset) 0;
+  padding: var(--toggle-inset);
+  background: var(--bg-tertiary);
+  border-radius: var(--control-radius);
   flex-shrink: 0;
 }
 
+/* The thumb slides behind the labels to the selected status. */
+.tabs::before {
+  content: '';
+  position: absolute;
+  top: var(--toggle-inset);
+  bottom: var(--toggle-inset);
+  left: var(--toggle-inset);
+  width: calc((100% - 2 * var(--toggle-inset)) / 3);
+  background: var(--bg-primary);
+  border-radius: calc(var(--control-radius) - var(--toggle-inset));
+  box-shadow: 0 1px 3px var(--shadow);
+  transition: transform 0.15s ease;
+}
+
+.tabs:has(.tab[data-status="doing"].active)::before { transform: translateX(100%); }
+.tabs:has(.tab[data-status="done"].active)::before { transform: translateX(200%); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tabs::before { transition: none; }
+}
+
 .tab {
-  flex: 1;
+  position: relative;
   min-width: 0;
-  padding: 8px 2px;
-  background: var(--bg-tertiary);
+  padding: 6px 2px;
+  background: transparent;
   border: none;
-  border-radius: var(--control-radius);
+  border-radius: calc(var(--control-radius) - var(--toggle-inset));
   font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s, box-shadow 0.15s;
+  transition: color 0.15s;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -184,14 +203,16 @@ body {
 }
 
 .tab:hover {
-  background: var(--bg-secondary);
   color: var(--text-primary);
 }
 
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .tab.active {
-  background: var(--bg-primary);
   color: var(--text-primary);
-  box-shadow: 0 1px 3px var(--shadow);
   font-weight: 600;
 }
 
@@ -216,6 +237,7 @@ body {
   display: flex;
   align-items: center;
   min-width: 0;
+  gap: var(--header-gap);
 }
 
 /* Disconnected state: show blue button only */
@@ -238,15 +260,14 @@ body {
 }
 
 .connect-btn-reuse {
-  max-width: 150px;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.connect-btn-primary.connect-btn-secondary {
-  background: transparent;
-  color: var(--text-muted);
+#choose-btn {
+  flex-shrink: 0;
 }
 
 /* Connected state: project button */
@@ -268,7 +289,7 @@ body {
 
 .project-btn:hover {
   background: var(--bg-secondary);
-  border-color: var(--border-light);
+  border-color: var(--border-strong);
 }
 
 .status-dot {
