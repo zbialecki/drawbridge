@@ -48,13 +48,14 @@ Each site connects separately, so feedback can't land in the wrong project. When
 
 ### 3. Process The Queue
 
-After adding annotations, open your project in Cursor, Claude Code, Codex, or Windsurf and run `/bridge` or `bridge`.
+After adding annotations, open your project in Cursor, Claude Code, Codex, or Windsurf and run `/bridge` or `bridge`. Existing `/bridge` commands are not overwritten; update them manually from `chrome-extension/rules-templates/bridge.md` to recognize **Needs Discussion**.
 
 ## Annotate
 
 - Press `C`, or use + Add -> Comment, then click an element and leave a note.
 - Press `R`, or use + Add -> Rectangle, then drag over an area and leave a note.
 - Press `S`, or use + Add -> Screen, to capture the visible viewport and describe it.
+- Check **Needs Discussion** to ask an agent to discuss the feedback and get approval before implementing it.
 - Press `Esc` to exit an annotation mode.
 - Click the Drawbridge toolbar icon, or press `Control+Shift+D` on Mac or `Alt+Shift+D` on Windows and Linux, to open or close the drawer. Change the shortcut at `chrome://extensions/shortcuts`.
 
@@ -154,7 +155,7 @@ npm run build
 
 The build output is written to `dist/drawbridge-v<version>.zip`. Add new runtime assets to the allowlist in `scripts/build.js`; other files, including annotations and local secrets, are not packaged. Tests live in [`tests/`](tests/README.md), mirroring the source directories.
 
-For the optional clipboard watcher, run `node /path/to/drawbridge/scripts/drawbridge-watcher.js` from the selected output folder (or `npm run watch` when it is this repository's root). It copies pending annotations together as one clipboard prompt and keeps a `watcher.json` receipt inside each copied annotation's folder.
+For the optional clipboard watcher, run `node /path/to/drawbridge/scripts/drawbridge-watcher.js` from the selected output folder (or `npm run watch` when it is this repository's root). It copies pending annotations together as one clipboard prompt and keeps a `watcher.json` receipt inside each copied annotation's folder. It retries annotations whose comment or referenced images are not yet available.
 
 ## Troubleshooting
 

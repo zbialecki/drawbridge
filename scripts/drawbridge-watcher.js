@@ -16,6 +16,13 @@ function readAnnotations(root) {
       const metadata = JSON.parse(fs.readFileSync(path.join(directory, 'metadata.json'), 'utf8'));
       validateMetadata(metadata);
       if (metadata.status === 'done') continue;
+      const files = ['comment.md', ...(metadata.screenshotPath ? [metadata.screenshotPath] : []), ...(metadata.attachments || [])];
+      if (!files.every(file => {
+        const target = path.join(directory, file);
+        if (!fs.statSync(target).isFile()) return false;
+        fs.accessSync(target, fs.constants.R_OK);
+        return true;
+      })) continue;
       annotations.push({ directory, metadata });
     } catch (error) {
       if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) {
@@ -50,7 +57,9 @@ function processAnnotations(root, copy = copyToClipboard) {
       if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
     }
     const prompt = [
-      'Fix this UI issue:', metadata.comment,
+      metadata.needsDiscussion
+        ? 'Needs Discussion: Discuss this issue with the user and obtain approval before implementing:'
+        : 'Fix this UI issue:', metadata.comment,
       `Annotation: ${directory}`,
       `Selector: ${metadata.selector || 'freeform rectangle'}`,
       `URL: ${metadata.pageUrl || ''}`,

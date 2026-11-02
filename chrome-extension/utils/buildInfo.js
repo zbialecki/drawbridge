@@ -1,6 +1,6 @@
 // Shared build id — keep DRAWBRIDGE_FEATURE_BUILD in sync across content + background
 (function () {
-  const DRAWBRIDGE_FEATURE_BUILD = 'panel-owned-folder-v2';
+  const DRAWBRIDGE_FEATURE_BUILD = 'panel-owned-folder-v5';
 
   function getContentScriptBuild(manifestVersion) {
     return `${manifestVersion}-${DRAWBRIDGE_FEATURE_BUILD}`;

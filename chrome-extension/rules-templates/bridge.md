@@ -18,7 +18,9 @@ Search the folder selected in Drawbridge for subfolders named `YY-MM-DD HH-mm`, 
 
 Each `metadata.json` contains **one object**, identified by `format: "drawbridge-annotation"`. Read annotations with status `"to do"` or `"doing"`; skip `"done"`. If the output folder is outside the current project and cannot be found, ask the user where they selected rather than guessing a path.
 
-Read `comment.md` and the metadata, including `comment`, `selector`, `boundingRect`, `pageUrl`, `elementContext`, `clickPosition`, and `screenshotViewport` when present. A freeform annotation includes `boundingBox` instead of a useful element selector.
+Read `comment.md` and the metadata, including `needsDiscussion`, `comment`, `selector`, `boundingRect`, `pageUrl`, `elementContext`, `clickPosition`, and `screenshotViewport` when present. A freeform annotation includes `boundingBox` instead of a useful element selector.
+
+If `needsDiscussion` is `true`, discuss the item with the user and obtain explicit approval before implementing it or changing its status, even in yolo mode. Continue processing other items if appropriate.
 
 Resolve `screenshotPath` and every `attachments` path **relative to that metadata file's directory**. Open the screenshot and every pasted reference image before implementing. Capture can fail, so a missing screenshot does not invalidate the comment. Report missing referenced files instead of inventing their contents.
 

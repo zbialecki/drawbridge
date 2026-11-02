@@ -312,7 +312,7 @@ body {
   min-width: 0;
   max-width: 100%;
   padding: 0 10px;
-  background: var(--bg-tertiary);
+  background: var(--bg-primary);
   border-radius: var(--control-radius);
   border: 1px solid var(--border);
   cursor: pointer;

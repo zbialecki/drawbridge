@@ -200,6 +200,7 @@
     if (box.isSubmitting) return false;
     box.isSubmitting = true;
     annotation.timestamp = box.annotationTimestamp ?? (box.annotationTimestamp = annotation.timestamp ?? Date.now());
+    annotation.needsDiscussion = box.querySelector('.float-comment-discussion').checked;
     if (box.annotationFolderName) annotation.folderName = box.annotationFolderName;
     const submit = box.querySelector('.float-comment-submit');
     submit.disabled = true;
@@ -627,6 +628,7 @@
       <div class="float-comment-attachments"></div>
       <div class="float-comment-error" role="alert"></div>
       <div class="float-comment-actions">
+        <label class="float-comment-discussion-label"><input type="checkbox" class="float-comment-discussion"> Needs Discussion</label>
         <button class="float-comment-cancel">Cancel</button>
         <button class="float-comment-submit" aria-label="Submit (Return)">Submit ⏎</button>
       </div>
@@ -882,6 +884,7 @@
         <div class="float-comment-attachments"></div>
         <div class="float-comment-error" role="alert"></div>
         <div class="float-comment-actions">
+          <label class="float-comment-discussion-label"><input type="checkbox" class="float-comment-discussion"> Needs Discussion</label>
           <button type="button" class="float-comment-cancel">Cancel</button>
           <button type="button" class="float-comment-submit" aria-label="Submit (Return)">Submit ⏎</button>
         </div>
@@ -929,13 +932,16 @@
         if (e.key === 'Enter' && isUserAction(e) && !e.shiftKey) {
           e.preventDefault();
           handleSubmit();
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          e.stopPropagation();
-          closeScreenCommentBox();
         }
       });
       box.addEventListener('keydown', (e) => {
+        if (e.isComposing || e.keyCode === 229) return;
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          closeScreenCommentBox();
+          return;
+        }
         if (e.key !== 'Tab') return;
         const active = (window.moatShadowRoot || document).activeElement;
         if (e.shiftKey && active === textarea) {
@@ -973,6 +979,7 @@
       showNotification('Refresh page (Ctrl+Shift+R) for latest Drawbridge', 'error');
       return;
     }
+    if (drawingMode) exitDrawingMode();
     commentMode = true;
     document.body.classList.add('float-comment-mode');
   }
@@ -1180,6 +1187,7 @@
       <div class="float-comment-attachments"></div>
       <div class="float-comment-error" role="alert"></div>
       <div class="float-comment-actions">
+        <label class="float-comment-discussion-label"><input type="checkbox" class="float-comment-discussion"> Needs Discussion</label>
         <button class="float-comment-cancel">Cancel</button>
         <button class="float-comment-submit" aria-label="Submit (Return)">Submit ⏎</button>
       </div>
@@ -1984,6 +1992,11 @@
     }
 
     // Side Panel message types
+    else if (request.type === 'CANCEL_SCREEN_CAPTURE') {
+      closeScreenCommentBox();
+      sendResponse({ success: true });
+    }
+
     else if (request.type === 'CAPTURE_SCREEN') {
       createScreenCommentBox().then(sendResponse).catch(err => {
         sendResponse({ success: false, error: err.message });
@@ -1991,7 +2004,7 @@
     }
 
     else if (request.type === 'ENTER_COMMENT_MODE') {
-      if (screenBackdrop || screenCapturePending || annotationCapturePending || commentBox?.isSubmitting) {
+      if (screenBackdrop || screenCapturePending || annotationCapturePending || commentBox || isDrawing) {
         if (commentBox) shakeCommentBox();
         sendResponse({ success: false, error: 'Finish or cancel the current annotation first.' });
         return true;
@@ -2002,7 +2015,7 @@
     }
 
     else if (request.type === 'ENTER_DRAWING_MODE') {
-      if (screenBackdrop || screenCapturePending || annotationCapturePending || commentBox?.isSubmitting) {
+      if (screenBackdrop || screenCapturePending || annotationCapturePending || commentBox || isDrawing) {
         if (commentBox) shakeCommentBox();
         sendResponse({ success: false, error: 'Finish or cancel the current annotation first.' });
         return true;

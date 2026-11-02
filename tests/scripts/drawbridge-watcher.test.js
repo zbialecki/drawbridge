@@ -43,6 +43,36 @@ test('discovers annotations and stores clipboard receipts without copying them a
   expect(fixture.exists('.moat')).toBe(false);
 });
 
+test('retries missing annotation files without blocking ready annotations', async () => {
+  const ready = await save('ready', 'Ready issue');
+  const store = new AnnotationStore();
+  store.initialize(fixture.directory);
+  const pending = await store.saveAnnotation({
+    id: 'pending', timestamp: new Date(2026, 10, 1, 15, 42).getTime(),
+    screenshot: 'data:image/png;base64,eA==', pastedImages: ['data:image/png;base64,eQ==']
+  }, { title: 'Button', comment: 'Pending issue' });
+  const directory = path.join(fixture.root, pending.folderName);
+  const files = ['comment.md', 'screenshot.png', 'reference-1.png'];
+  const contents = files.map(name => fs.readFileSync(path.join(directory, name)));
+  files.forEach(name => fs.unlinkSync(path.join(directory, name)));
+
+  processAnnotations(fixture.root);
+  expect(spawnSync).toHaveBeenCalledTimes(1);
+  expect(spawnSync.mock.calls[0][1].input).toContain('Ready issue');
+  expect(spawnSync.mock.calls[0][1].input).not.toContain('Pending issue');
+  expect(fixture.exists(`${ready.folderName}/watcher.json`)).toBe(true);
+  expect(fixture.exists(`${pending.folderName}/watcher.json`)).toBe(false);
+  for (const [index, name] of files.entries()) {
+    fs.writeFileSync(path.join(directory, name), contents[index]);
+    processAnnotations(fixture.root);
+    expect(spawnSync).toHaveBeenCalledTimes(index === files.length - 1 ? 2 : 1);
+  }
+  expect(spawnSync.mock.calls[1][1].input).toContain('Pending issue');
+  expect(fixture.exists(`${pending.folderName}/watcher.json`)).toBe(true);
+  processAnnotations(fixture.root);
+  expect(spawnSync).toHaveBeenCalledTimes(2);
+});
+
 test('a failed clipboard command does not mark an annotation copied or change its metadata', async () => {
   spawnSync.mockReturnValue({ status: 1, stderr: 'Clipboard unavailable' });
   jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -73,6 +103,18 @@ test('invalid metadata does not block copying the valid queue', async () => {
   processAnnotations(fixture.root);
   expect(spawnSync).toHaveBeenCalledTimes(1);
   expect(fixture.exists(`${invalid}/watcher.json`)).toBe(false);
+});
+
+test('the clipboard prompt asks for discussion before implementing flagged annotations', async () => {
+  await save('normal', 'Normal issue');
+  const store = new AnnotationStore();
+  store.initialize(fixture.directory);
+  await store.saveAnnotation({ id: 'discussion', timestamp: new Date(2026, 10, 1, 15, 42).getTime(),
+    needsDiscussion: true }, { title: 'Button', comment: 'Discuss this issue' });
+  processAnnotations(fixture.root);
+  const input = spawnSync.mock.calls[0][1].input;
+  expect(input).toContain('Fix this UI issue:\nNormal issue');
+  expect(input).toContain('Needs Discussion: Discuss this issue with the user and obtain approval before implementing:\nDiscuss this issue');
 });
 
 test('the copied prompt includes component context when it was captured', async () => {

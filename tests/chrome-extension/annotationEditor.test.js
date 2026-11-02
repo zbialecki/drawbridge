@@ -52,10 +52,16 @@ test.each(['comment', 'rectangle', 'screen'])('%s editor shows the updated promp
   expect(textarea.placeholder).toBe('What needs to be changed? Markdown supported.');
   expect(submit.textContent).toBe('Submit ⏎');
   expect(submit.getAttribute('aria-label')).toBe('Submit (Return)');
+  const checkbox = context.commentBox.querySelector('.float-comment-discussion');
+  expect(checkbox.checked).toBe(false);
+  expect(checkbox.closest('label').textContent).toContain('Needs Discussion');
+  checkbox.checked = true;
   textarea.value = '**Make this clearer.**';
   key('Enter');
   expect(context.submitCommentAnnotation).toHaveBeenCalledTimes(1);
-  expect(context.submitCommentAnnotation.mock.calls[0][1].content).toBe('**Make this clearer.**');
+  expect(context.submitCommentAnnotation.mock.calls[0][1]).toMatchObject({
+    content: '**Make this clearer.**', needsDiscussion: true
+  });
   await context.submitCommentAnnotation.mock.results[0].value;
 
   // Page scripts can dispatch events on the editor, but those must not submit it.
@@ -73,6 +79,7 @@ test.each(['comment', 'rectangle', 'screen'])('%s keeps its draft if Cancel or E
   const saved = deferred();
   context.addToQueue.mockImplementationOnce(() => { started.resolve(); return saved.promise; });
   textarea.value = 'Keep this draft';
+  box.querySelector('.float-comment-discussion').checked = true;
   box.pastedImages.push('data:image/png;base64,eA==');
   key('Enter');
   await started.promise;
@@ -86,12 +93,29 @@ test.each(['comment', 'rectangle', 'screen'])('%s keeps its draft if Cancel or E
     await pending;
   }
   expect(textarea.value).toBe('Keep this draft');
+  expect(box.querySelector('.float-comment-discussion').checked).toBe(true);
   expect(box.pastedImages).toEqual(['data:image/png;base64,eA==']);
   expect(submit.disabled).toBe(false);
   key('Enter');
   expect(await context.submitCommentAnnotation.mock.results[1].value).toBe(true);
+  expect(context.addToQueue.mock.calls[1][0].needsDiscussion).toBe(true);
   expect(document.querySelector('.float-comment-box')).toBeNull();
 });
+
+test.each(['textarea', '.float-comment-discussion', '.float-comment-cancel', '.float-comment-submit'])(
+  'Escape closes the screen editor from %s even when the page stops key events', async selector => {
+    const { context, document } = await openEditor('screen');
+    const control = context.commentBox.querySelector(selector);
+    document.body.addEventListener('keydown', event => event.stopPropagation());
+    control.focus();
+    control.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true }));
+    expect(context.commentBox).not.toBeNull();
+    control.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(context.commentBox).toBeNull();
+    expect(document.querySelector('.float-screen-backdrop')).toBeNull();
+    expect(context.addToQueue).not.toHaveBeenCalled();
+  }
+);
 
 test('selectors uniquely identify elements with special IDs, duplicate attributes, and nested buttons', () => {
   dom = new JSDOM(`<div id=":r0:">React</div><main>

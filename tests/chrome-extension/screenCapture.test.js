@@ -35,6 +35,7 @@ function setupScreen() {
       this.fields = {
         textarea: new Element(),
         '.float-comment-attachments': new Element(),
+        '.float-comment-discussion': Object.assign(new Element(), { checked: false }),
         '.float-comment-submit': new Element(),
         '.float-comment-cancel': new Element()
       };
@@ -101,6 +102,7 @@ describe('screen feedback', () => {
     expect(box.attributes).toMatchObject({ role: 'dialog', 'aria-modal': 'true' });
     const textarea = box.querySelector('textarea');
     expect(document.activeElement).toBe(textarea);
+    box.querySelector('.float-comment-discussion').checked = true;
     textarea.value = 'Make the spacing consistent.';
     textarea.dispatch('paste', {
       clipboardData: { items: [{ type: 'image/png', getAsFile: () => ({ dataUrl: image }) }] },
@@ -116,7 +118,10 @@ describe('screen feedback', () => {
     expect(fixture.read(`${saved.folderName}/screenshot.png`)).toBe('x');
     expect(fixture.read(`${saved.folderName}/reference-1.png`)).toBe('x');
     expect(fixture.read(`${saved.folderName}/comment.md`)).toContain('Make the spacing consistent.');
-    expect(JSON.parse(fixture.read(`${saved.folderName}/metadata.json`))).toMatchObject({ selectorMethod: 'screen', pageTitle: 'Settings' });
+    expect(fixture.read(`${saved.folderName}/comment.md`)).toContain('Needs Discussion');
+    expect(JSON.parse(fixture.read(`${saved.folderName}/metadata.json`))).toMatchObject({
+      selectorMethod: 'screen', pageTitle: 'Settings', needsDiscussion: true
+    });
     expect(document.body.children).toHaveLength(0);
     expect(document.activeElement).toBe(setup.previousFocus);
     expect(context.relayToSidePanel).toHaveBeenLastCalledWith({ type: 'MODE_CHANGED', mode: null });
@@ -253,9 +258,37 @@ describe('screen feedback', () => {
     box.dispatch('keydown', key);
     expect(key.preventDefault).toHaveBeenCalled();
     expect(setup.document.activeElement).toBe(submit);
-    textarea.dispatch('keydown', { key: 'Escape', preventDefault: jest.fn(), stopPropagation: jest.fn() });
+    box.dispatch('keydown', { key: 'Escape', preventDefault: jest.fn(), stopPropagation: jest.fn() });
     expect(setup.context.commentBox).toBeNull();
     expect(setup.document.activeElement).toBe(setup.previousFocus);
+  });
+
+  test('panel tool requests switch drawing to comment without discarding a draft or active rectangle', () => {
+    setup = setupScreen();
+    const { context } = setup;
+    context.drawingMode = true;
+    context.exitDrawingMode = jest.fn(() => { context.drawingMode = false; });
+    context.enterDrawingMode = jest.fn();
+    vm.runInContext(section(contentSource, '  // Enter comment mode', '  // Create canvas overlay for drawing'), context);
+    let listener;
+    context.chrome = { runtime: { onMessage: { addListener(fn) { listener = fn; } } } };
+    vm.runInContext(section(contentSource, '  chrome.runtime.onMessage.addListener(', '  // Helper to relay messages'), context);
+    const response = jest.fn();
+    listener({ type: 'ENTER_COMMENT_MODE' }, {}, response);
+    expect(context.exitDrawingMode).toHaveBeenCalledTimes(1);
+    expect(context.commentMode).toBe(true);
+    expect(response).toHaveBeenLastCalledWith({ success: true });
+
+    context.commentBox = { isSubmitting: false };
+    listener({ type: 'ENTER_DRAWING_MODE' }, {}, response);
+    expect(response).toHaveBeenLastCalledWith({ success: false, error: expect.stringContaining('Finish or cancel') });
+    expect(context.commentBox).not.toBeNull();
+    expect(context.enterDrawingMode).not.toHaveBeenCalled();
+    context.commentBox = null;
+    context.isDrawing = true;
+    listener({ type: 'ENTER_COMMENT_MODE' }, {}, response);
+    expect(response).toHaveBeenLastCalledWith({ success: false, error: expect.stringContaining('Finish or cancel') });
+    expect(context.exitDrawingMode).toHaveBeenCalledTimes(1);
   });
 
   test('the panel message opens the same screen capture flow', async () => {
@@ -268,6 +301,14 @@ describe('screen feedback', () => {
     });
     expect(await result).toEqual({ success: true });
     expect(setup.context.captureScreenshotNative).toHaveBeenCalledTimes(1);
+    setup.context.commentBox.isSubmitting = true;
+    const respond = jest.fn();
+    listener({ type: 'CANCEL_SCREEN_CAPTURE' }, {}, respond);
+    expect(setup.context.commentBox).not.toBeNull();
+    setup.context.commentBox.isSubmitting = false;
+    listener({ type: 'CANCEL_SCREEN_CAPTURE' }, {}, respond);
+    expect(setup.context.commentBox).toBeNull();
+    expect(setup.document.activeElement).toBe(setup.previousFocus);
   });
 });
 
@@ -349,6 +390,21 @@ function setupPanel() {
   return { context, listeners, screenItem };
 }
 
+test('Escape in the side panel cancels an open screen editor', async () => {
+  const { context, listeners } = setupPanel();
+  vm.runInContext("currentMode = 'screen';", context);
+  const event = { key: 'Escape', preventDefault: jest.fn(), target: { matches: () => false, closest: () => null } };
+  listeners.keydown(event);
+  expect(event.preventDefault).toHaveBeenCalled();
+  expect(context.sendToContentScript).toHaveBeenCalledWith({ type: 'CANCEL_SCREEN_CAPTURE' }, false);
+  context.sendToContentScript.mockClear();
+  listeners.keydown({ ...event, isComposing: true });
+  listeners.keydown({ ...event, keyCode: 229 });
+  vm.runInContext('currentMode = null;', context);
+  listeners.keydown(event);
+  expect(context.sendToContentScript).not.toHaveBeenCalled();
+});
+
 test('the Screen menu option routes a capture request to the active page', async () => {
   const { context, screenItem } = setupPanel();
   await screenItem.click();
@@ -360,6 +416,53 @@ test('a failed panel capture shows the reason', async () => {
   context.sendToContentScript.mockResolvedValue({ success: false, error: 'Try again.' });
   await screenItem.click();
   expect(context.showNotification).toHaveBeenCalledWith('Try again.', 'error');
+});
+
+test.each([['c', 'ENTER_COMMENT_MODE'], ['r', 'ENTER_DRAWING_MODE']])('%s works with focus in the side panel', async (key, type) => {
+  const { context, listeners } = setupPanel();
+  const event = { key, preventDefault: jest.fn(), target: { matches: () => false, closest: () => null } };
+  listeners.keydown(event);
+  await Promise.resolve();
+  expect(event.preventDefault).toHaveBeenCalled();
+  expect(context.sendToContentScript).toHaveBeenCalledWith({ type }, false);
+});
+
+test('side-panel tool shortcuts report a rejected request and do not send to a changed tab', async () => {
+  const { context, listeners } = setupPanel();
+  context.sendToContentScript.mockResolvedValue({ success: false, error: 'Finish the current annotation' });
+  const event = { key: 'c', preventDefault: jest.fn(), target: { matches: () => false, closest: () => null } };
+  listeners.keydown(event);
+  await new Promise(setImmediate);
+  expect(context.showNotification).toHaveBeenCalledWith('Finish the current annotation', 'error');
+
+  vm.runInContext('contentScriptReady = false;', context);
+  const ready = deferred();
+  context.connectWithRetry = jest.fn(() => ready.promise);
+  context.sendToContentScript.mockClear();
+  listeners.keydown(event);
+  vm.runInContext('tabEpoch++;', context);
+  ready.resolve(true);
+  await new Promise(setImmediate);
+  expect(context.sendToContentScript).not.toHaveBeenCalled();
+});
+
+test('side-panel shortcuts do not interfere with typing, composition, or browser shortcuts', async () => {
+  const { context, listeners } = setupPanel();
+  for (const key of ['c', 'r', 's']) {
+    for (const overrides of [
+      { ctrlKey: true }, { metaKey: true }, { altKey: true }, { repeat: true },
+      { isComposing: true }, { keyCode: 229 },
+      { target: { matches: () => true, closest: () => null } },
+      { target: { matches: () => false, isContentEditable: true, closest: () => null } },
+      { target: { matches: () => false, closest: () => ({}) } }
+    ]) {
+      const event = { key, preventDefault: jest.fn(), target: { matches: () => false, closest: () => null }, ...overrides };
+      listeners.keydown(event);
+      expect(event.preventDefault).not.toHaveBeenCalled();
+    }
+  }
+  await Promise.resolve();
+  expect(context.sendToContentScript).not.toHaveBeenCalled();
 });
 
 test('S also works with focus in the side panel, but not in an input', async () => {

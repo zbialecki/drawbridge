@@ -112,6 +112,16 @@ test('retrying an already-saved annotation preserves later agent changes and sta
   expect(fixture.exists(`${folder}_2`)).toBe(false);
 });
 
+test('saves the discussion flag in metadata and the readable comment', async () => {
+  await store.saveAnnotation({ ...annotation(), needsDiscussion: true }, taskData);
+  expect(metadata().needsDiscussion).toBe(true);
+  expect(fixture.read(`${folder}/comment.md`)).toContain('Needs Discussion: Discuss with the user and obtain approval');
+  await store.updateTaskStatusAndSave('one', 'doing');
+  expect(metadata().needsDiscussion).toBe(true);
+  expect(fixture.read(`${folder}/comment.md`)).toContain('Needs Discussion');
+  await expect(store.saveAnnotation({ ...annotation('bad'), needsDiscussion: 'false' }, taskData)).rejects.toThrow('needsDiscussion must be a boolean');
+});
+
 test('capture failure still saves the comment and metadata without an image', async () => {
   const saved = await store.saveAnnotation({ ...annotation(), screenshot: null, pastedImages: [] }, taskData);
   expect(saved.screenshotPath).toBe('');

@@ -28,7 +28,8 @@ function setup(failure) {
   vm.runInContext(sourceSection(source, '  // Folder access lives in the side panel', '  // Read React and Next.js details'), context);
   vm.runInContext(sourceSection(source, '  // Add annotation to queue', '  // Get user-friendly element label'), context);
   const button = { disabled: false };
-  const box = { pastedImages: ['data:image/png;base64,eA=='], querySelector: () => button };
+  const box = { pastedImages: ['data:image/png;base64,eA=='],
+    querySelector: selector => selector === '.float-comment-discussion' ? { checked: false } : button };
   const annotation = { id: 'test', content: 'Keep this comment', pastedImages: box.pastedImages,
     timestamp: new Date(2026, 10, 1, 15, 42).getTime() };
   return { context, button, box, annotation, save, taskStore };
@@ -51,7 +52,9 @@ test('saves pasted images beside their comment and metadata', async () => {
   expect(await context.submitCommentAnnotation(box, annotation)).toBe(true);
   const task = taskStore.tasks[0];
   expect(fixture.read(`${task.folderName}/reference-1.png`)).toBe('x');
-  expect(JSON.parse(fixture.read(`${task.folderName}/metadata.json`)).attachments).toEqual(['./reference-1.png']);
+  expect(JSON.parse(fixture.read(`${task.folderName}/metadata.json`))).toMatchObject({
+    attachments: ['./reference-1.png'], needsDiscussion: false
+  });
   expect(save.mock.calls[0][0].annotation.id).toBe(annotation.id);
 });
 

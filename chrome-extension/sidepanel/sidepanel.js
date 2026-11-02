@@ -294,13 +294,20 @@ function setupEventListeners() {
 
   // The panel can have keyboard focus after opening the tools menu.
   document.addEventListener('keydown', (e) => {
-    if (e.key.toLowerCase() !== 's' || e.ctrlKey || e.metaKey || e.altKey ||
+    if (e.key === 'Escape' && currentMode === 'screen' && !e.isComposing && e.keyCode !== 229) {
+      e.preventDefault();
+      sendToContentScript({ type: 'CANCEL_SCREEN_CAPTURE' }, false);
+      return;
+    }
+    const key = e.key.toLowerCase();
+    if (!['c', 'r', 's'].includes(key) || e.ctrlKey || e.metaKey || e.altKey ||
         e.repeat || e.isComposing || e.keyCode === 229 || document.hidden ||
         e.target?.matches?.('input, textarea, select') || e.target?.isContentEditable ||
         e.target?.closest?.('[role="textbox"]')) return;
     e.preventDefault();
     hideToolsMenu();
-    requestScreenCapture();
+    if (key === 's') requestScreenCapture();
+    else requestAnnotationMode(key === 'c' ? 'ENTER_COMMENT_MODE' : 'ENTER_DRAWING_MODE');
   });
 
   // Settings button (theme toggle for now)
@@ -314,6 +321,19 @@ function setupEventListeners() {
 
   // Listen for messages from content script via background
   chrome.runtime.onMessage.addListener(handleMessage);
+}
+
+async function requestAnnotationMode(type) {
+  const epoch = tabEpoch;
+  if (!contentScriptReady && !await connectWithRetry(2)) {
+    if (epoch === tabEpoch) showNotification('Please refresh the page first', 'error');
+    return;
+  }
+  if (epoch !== tabEpoch) return;
+  const result = await sendToContentScript({ type }, false);
+  if (epoch === tabEpoch && !result?.success) {
+    showNotification(result?.error || 'Could not start annotation. Please refresh the page and try again.', 'error');
+  }
 }
 
 async function requestScreenCapture() {

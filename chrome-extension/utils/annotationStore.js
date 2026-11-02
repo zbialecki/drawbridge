@@ -31,7 +31,9 @@
 
   function commentMarkdown(task) {
     const checkbox = task.status === 'done' ? '[x]' : task.status === 'doing' ? '[~]' : '[ ]';
-    let text = `# ${task.title}\n\n- ${checkbox} ${task.status}\n\n${task.comment}\n`;
+    let text = `# ${task.title}\n\n- ${checkbox} ${task.status}\n`;
+    if (task.needsDiscussion) text += '\n**Needs Discussion: Discuss with the user and obtain approval before implementing.**\n';
+    text += `\n${task.comment}\n`;
     if (task.screenshotPath) text += `\n![Screenshot](${task.screenshotPath})\n`;
     for (const reference of task.attachments || []) text += `\n[Reference image](${reference})\n`;
     return text;
@@ -49,6 +51,9 @@
     }
     if (!task.id.trim()) throw new Error('Task id cannot be empty');
     if (!Number.isFinite(task.timestamp)) throw new Error('Task timestamp must be a finite number');
+    if (task.needsDiscussion !== undefined && typeof task.needsDiscussion !== 'boolean') {
+      throw new Error('Task needsDiscussion must be a boolean');
+    }
     if (task.selector != null && typeof task.selector !== 'string') {
       throw new Error(`Task selector must be a string or null, got: ${typeof task.selector}`);
     }

@@ -92,7 +92,7 @@ test('a save failure appears in the sidebar and leaves the page untouched', asyn
     vm.runInContext(sourceSection(source, '  // Show notification', '  // Add annotation to queue'), context);
     vm.runInContext(sourceSection(source, '  async function submitCommentAnnotation(', '  // Wire clipboard-image paste'), context);
     const button = { disabled: false };
-    const box = { querySelector: () => button };
+    const box = { querySelector: selector => selector === '.float-comment-discussion' ? { checked: false } : button };
     expect(await context.submitCommentAnnotation(box, { content: 'Keep this draft' })).toBe(false);
     expect(sidebar.window.document.querySelector('.notification.error').textContent)
       .toContain('Permission denied');

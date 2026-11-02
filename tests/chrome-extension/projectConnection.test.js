@@ -32,6 +32,8 @@ test('installs the /bridge command for each agent without touching project files
   const command = fixture.read('.claude/commands/bridge.md');
   expect(command).toContain('metadata.json');
   expect(command).toContain('relative to that metadata');
+  expect(command).toContain('needsDiscussion');
+  expect(command).toContain('even in yolo mode');
   expect(fixture.read('.windsurf/workflows/bridge.md')).toBe(command);
   expect(fixture.read('.codex/prompts/bridge.md')).toBe(command);
 });
@@ -61,6 +63,7 @@ test('falls back to a built-in command if the template cannot load', async () =>
   global.fetch.mockResolvedValue({ ok: false, status: 404, statusText: 'Not Found' });
   await installProjectFiles(fixture.directory);
   expect(fixture.read('.claude/commands/bridge.md')).toContain('Process Drawbridge annotation folders');
+  expect(fixture.read('.claude/commands/bridge.md')).toContain('needsDiscussion');
 });
 
 test('one agent folder failing does not stop the others', async () => {

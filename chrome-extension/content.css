@@ -134,9 +134,27 @@ body.float-drawing-mode * {
 
 .float-comment-actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 8px;
+}
+
+.float-comment-box .float-comment-discussion-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  margin-right: auto;
+  color: #4b5563;
+  font-size: 12px;
+  cursor: pointer !important;
+}
+
+.float-comment-box .float-comment-discussion {
+  accent-color: #3b82f6;
+  cursor: pointer !important;
 }
 
 .float-comment-actions button {
