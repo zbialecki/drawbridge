@@ -3,14 +3,14 @@
 /* Theme Variables */
 :root,
 [data-theme="light"] {
-  --panel-inset: 12px;
+  --panel-inset: 8px;
   --header-control-height: 32px;
   --header-gap: 8px;
   --control-radius: 6px;
   --card-padding: 6px;
   --card-border-width: 1px;
-  --card-radius: 12px;
-  --thumbnail-radius: calc(var(--card-radius) - var(--card-padding) - var(--card-border-width));
+  --card-radius: var(--control-radius);
+  --thumbnail-radius: max(0px, calc(var(--card-radius) - var(--card-border-width)));
   --bg-primary: #ffffff;
   --bg-secondary: #f9fafb;
   --bg-tertiary: #f3f4f6;
@@ -27,6 +27,7 @@
   --success-light: rgba(34, 197, 94, 0.1);
   --error: #dc2626;
   --error-light: rgba(239, 68, 68, 0.1);
+  --error-hover-bg: #fef2f2;
   --warning: #d97706;
   --shadow: rgba(0, 0, 0, 0.1);
   --shadow-lg: rgba(0, 0, 0, 0.15);
@@ -49,6 +50,7 @@
   --success-light: rgba(16, 185, 129, 0.1);
   --error: #f87171;
   --error-light: rgba(248, 113, 113, 0.1);
+  --error-hover-bg: #3b222a;
   --warning: #fbbf24;
   --shadow: rgba(0, 0, 0, 0.3);
   --shadow-lg: rgba(0, 0, 0, 0.4);
@@ -365,10 +367,13 @@ body {
   transition: opacity 0.15s;
 }
 
-.task-card.status-to-do { border-left: 4px solid #f59e0b; }
-.task-card.status-doing { border-left: 4px solid #3b82f6; }
-.task-card.status-done { border-left: 4px solid #10b981; }
-.task-card.completed { opacity: 0.7; }
+.task-card.status-to-do { border-left: 2px solid rgb(245 158 11 / 65%); }
+.task-card.status-doing { border-left: 2px solid rgb(59 130 246 / 65%); }
+.task-card.status-done { border-left: 2px solid rgb(16 185 129 / 65%); }
+.task-card.completed .task-time,
+.task-card.completed .task-content,
+.task-card.completed .task-selector,
+.task-card.completed .thumbnail-img { opacity: 0.7; }
 
 /* Two-column layout */
 .task-layout {
@@ -405,8 +410,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  border: 1px solid transparent;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--text-muted);
   cursor: pointer;
@@ -421,7 +426,7 @@ body {
 }
 
 .delete-btn:hover {
-  background: var(--error-light);
+  background: var(--error-hover-bg);
   color: var(--error);
   border-color: var(--error);
 }
@@ -463,10 +468,11 @@ body {
   position: relative;
   width: 100px;
   flex-shrink: 0;
-  border-radius: var(--thumbnail-radius);
+  margin: calc(-1 * var(--card-padding)) calc(-1 * var(--card-padding)) calc(-1 * var(--card-padding)) 0;
+  border-radius: 0 var(--thumbnail-radius) var(--thumbnail-radius) 0;
   overflow: visible;
   background: var(--bg-tertiary);
-  border: 1px solid var(--border);
+  border-left: 1px solid var(--border);
   align-self: stretch;
 }
 
@@ -474,13 +480,13 @@ body {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: calc(var(--thumbnail-radius) - 1px);
+  border-radius: inherit;
 }
 
 .thumbnail-delete-btn {
   position: absolute;
-  top: -6px;
-  right: -6px;
+  top: 4px;
+  right: 4px;
   width: 22px;
   height: 22px;
   display: flex;
@@ -504,7 +510,7 @@ body {
 }
 
 .thumbnail-delete-btn:hover {
-  background: var(--error-light);
+  background: var(--error-hover-bg);
   color: var(--error);
   border-color: var(--error);
 }
@@ -584,9 +590,9 @@ body {
 /* Notifications */
 .notification-container {
   position: fixed;
-  bottom: 16px;
-  left: 16px;
-  right: 16px;
+  bottom: var(--panel-inset);
+  left: var(--panel-inset);
+  right: var(--panel-inset);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -616,6 +622,11 @@ body {
   background: var(--error-light);
   border-color: var(--error);
   color: var(--error);
+}
+
+.notification.warning {
+  border-color: var(--warning);
+  color: var(--warning);
 }
 
 .notification.removing {

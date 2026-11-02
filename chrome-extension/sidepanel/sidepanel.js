@@ -277,6 +277,14 @@ function handleMessage(message, sender, sendResponse) {
       requestTasks();
       break;
 
+    case 'SHOW_NOTIFICATION':
+      if (typeof message.message === 'string' && message.message.trim()) {
+        const type = ['info', 'success', 'warning', 'error'].includes(message.notificationType)
+          ? message.notificationType : 'info';
+        showNotification(message.message, type);
+      }
+      break;
+
     case 'MODE_CHANGED':
       currentMode = message.mode;
       updateToolsButtonState();
@@ -313,6 +321,11 @@ let contentScriptReady = false;
 async function sendToContentScript(message, showError = true) {
   const epoch = tabEpoch;
   try {
+    if (!globalThis.chrome?.tabs?.query) {
+      contentScriptReady = false;
+      updatePageStatus();
+      return null;
+    }
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (epoch !== tabEpoch || !tab?.id || tab.id !== activeTabId) {
       console.warn('[SidePanel] No active tab');
@@ -325,11 +338,18 @@ async function sendToContentScript(message, showError = true) {
       return null;
     }
 
-    return new Promise((resolve) => {
+    if (!globalThis.chrome?.tabs?.sendMessage || !globalThis.chrome?.runtime) {
+      contentScriptReady = false;
+      updatePageStatus();
+      return null;
+    }
+
+    return await new Promise((resolve) => {
       chrome.tabs.sendMessage(tab.id, message, (response) => {
         if (epoch !== tabEpoch || tab.id !== activeTabId) { resolve(null); return; }
-        if (chrome.runtime.lastError) {
-          console.warn('[SidePanel] Send failed:', chrome.runtime.lastError.message);
+        const runtime = globalThis.chrome?.runtime;
+        if (!runtime || runtime.lastError) {
+          if (runtime?.lastError) console.warn('[SidePanel] Send failed:', runtime.lastError.message);
           contentScriptReady = false;
           updatePageStatus();
           // Debounce error notifications (only show once per 5 seconds)
@@ -347,7 +367,11 @@ async function sendToContentScript(message, showError = true) {
       });
     });
   } catch (error) {
-    console.error('[SidePanel] Error sending message:', error);
+    if (epoch === tabEpoch) {
+      contentScriptReady = false;
+      updatePageStatus();
+    }
+    console.warn('[SidePanel] Error sending message:', error);
     return null;
   }
 }
@@ -356,6 +380,7 @@ async function sendToContentScript(message, showError = true) {
 async function pingContentScript() {
   const epoch = tabEpoch;
   try {
+    if (!globalThis.chrome?.tabs?.query) return false;
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (epoch !== tabEpoch || !tab?.id || tab.id !== activeTabId) return false;
 
@@ -364,10 +389,11 @@ async function pingContentScript() {
       return false;
     }
 
-    return new Promise((resolve) => {
+    if (!globalThis.chrome?.tabs?.sendMessage || !globalThis.chrome?.runtime) return false;
+    return await new Promise((resolve) => {
       chrome.tabs.sendMessage(tab.id, { action: 'ping' }, (response) => {
         if (epoch !== tabEpoch || tab.id !== activeTabId) { resolve(false); return; }
-        if (chrome.runtime.lastError) {
+        if (!globalThis.chrome?.runtime || chrome.runtime.lastError) {
           resolve(false);
         } else {
           resolve(response?.ready === true);

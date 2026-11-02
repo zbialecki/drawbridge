@@ -66,12 +66,12 @@
   let screenBackdrop = null;
   let screenCapturePending = false;
   let annotationCapturePending = false;
+  let commentCaptureVersion = 0;
   let highlightedElement = null;
   let deepSelectIndex = 0;
   let pickStack = [];
   let lastPointer = { x: 0, y: 0 };
   let drilledOnPointerdown = false;
-  let deepSelectBadge = null;
   // Track Control via keydown — macOS Ctrl+Click becomes right-click and drops ctrlKey.
   let controlKeyHeld = false;
   let lastTopPickElement = null;
@@ -480,9 +480,8 @@
 
   async function saveAnnotationWithNewSystem(annotation) {
     const task = await taskStore.saveAnnotation(annotation, convertAnnotationToTask(annotation));
-    window.dispatchEvent(new CustomEvent('moat:tasks-updated', { detail: { task } }));
+    // Notify the panel directly; old extension contexts can still have page-event listeners.
     relayToSidePanel({ type: 'ANNOTATION_CREATED', taskId: task.id });
-    showNotification(`Saved to ${task.folderName}`);
     return true;
   }
 
@@ -1983,36 +1982,9 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
     }
   }
 
-  // Show notification - uses centralized system from moat.js
+  // Show notifications in the native side panel.
   function showNotification(message, type = 'info') {
-    // Check if the centralized notification system is available
-    if (window.showMoatNotification) {
-      window.showMoatNotification(message, type, 'content-script');
-      return;
-    }
-    
-    // Fallback to simple notification with inline styles (for CSS isolation)
-    const notification = document.createElement('div');
-    notification.setAttribute('data-drawbridge-notification', '');
-    notification.textContent = message;
-    notification.style.cssText = `
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background: ${type === 'error' ? '#dc2626' : '#1f2937'};
-      color: white;
-      padding: 12px 24px;
-      border-radius: 8px;
-      font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 14px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-      z-index: 2147483647;
-      max-width: 300px;
-      pointer-events: auto;
-    `;
-    document.body.appendChild(notification);
-    
-    setTimeout(() => notification.remove(), 3000);
+    relayToSidePanel({ type: 'SHOW_NOTIFICATION', message, notificationType: type });
   }
 
   // Process all "to do" tasks (triggered by "bridge" command)
@@ -2628,14 +2600,14 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
     }
     if (screenCapturePending || annotationCapturePending) return;
     annotationCapturePending = true;
-    
-    // Use the existing hover overlay for screenshot (already in DOM and positioned)
-    // No need to create a new one - just wait a moment to ensure it's rendered
-    await new Promise(resolve => setTimeout(resolve, 50));
-    
-    // Capture screenshot with the highlight visible
+    const captureVersion = commentCaptureVersion;
+
     let screenshotData = null;
     try {
+      // Let the selected element's overlay render before the screenshot.
+      await new Promise(resolve => setTimeout(resolve, 50));
+      if (captureVersion !== commentCaptureVersion) return;
+
       const rect = element.getBoundingClientRect();
       const padding = 100;
       
@@ -2666,6 +2638,7 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
     } finally {
       annotationCapturePending = false;
     }
+    if (captureVersion !== commentCaptureVersion) return;
     
     // Keep the DOM overlay visible while user is commenting
     // Don't remove it - just store reference
@@ -2678,13 +2651,14 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
     commentBox.innerHTML = `
       <textarea
         class="float-comment-input"
-        placeholder="What needs to be fixed? (paste an image to attach a reference)"
+        aria-label="Feedback description"
+        placeholder="What needs to be changed? Markdown supported."
         autofocus
       ></textarea>
       <div class="float-comment-attachments"></div>
       <div class="float-comment-actions">
         <button class="float-comment-cancel">Cancel</button>
-        <button class="float-comment-submit">Submit (Enter)</button>
+        <button class="float-comment-submit" aria-label="Submit (Return)">Submit ⏎</button>
       </div>
     `;
     
@@ -2693,8 +2667,8 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
     container.appendChild(commentBox);
     
     // Position near cursor (using actual click coordinates)
-    const boxWidth = 320;
-    const boxHeight = 120; // Approximate height
+    const boxWidth = 360;
+    const boxHeight = 200; // Approximate height
     const padding = 10;
     
     // Calculate optimal position near cursor
@@ -2729,10 +2703,10 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
     // Final adjustment after measuring actual box dimensions
     const boxRect = commentBox.getBoundingClientRect();
     if (boxRect.right > window.innerWidth) {
-      commentBox.style.left = `${window.innerWidth - boxRect.width - padding}px`;
+      commentBox.style.left = `${Math.max(padding, window.innerWidth - boxRect.width - padding)}px`;
     }
     if (boxRect.bottom > window.innerHeight) {
-      commentBox.style.top = `${window.innerHeight - boxRect.height - padding}px`;
+      commentBox.style.top = `${Math.max(padding, window.innerHeight - boxRect.height - padding)}px`;
     }
     
     const textarea = commentBox.querySelector('textarea');
@@ -2930,13 +2904,13 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
         <h2 id="float-screen-comment-title" class="float-screen-comment-title">Screen feedback</h2>
         <textarea
           class="float-comment-input"
-          aria-label="Describe what needs to be fixed"
-          placeholder="What needs to be fixed? (paste an image to attach a reference)"
+          aria-label="Feedback description"
+          placeholder="What needs to be changed? Markdown supported."
         ></textarea>
         <div class="float-comment-attachments"></div>
         <div class="float-comment-actions">
           <button type="button" class="float-comment-cancel">Cancel</button>
-          <button type="button" class="float-comment-submit">Submit (Enter)</button>
+          <button type="button" class="float-comment-submit" aria-label="Submit (Return)">Submit ⏎</button>
         </div>
       `;
       const box = commentBox;
@@ -3032,16 +3006,16 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
   // Exit comment mode
   function exitCommentMode() {
     commentMode = false;
+    commentCaptureVersion++;
     document.body.classList.remove('float-comment-mode');
     deepSelectIndex = 0;
     pickStack = [];
     lastTopPickElement = null;
-    removeDeepSelectBadge();
+    setDeepSelectActive(false);
     
-    // Remove DOM overlay from the element
-    if (commentBox && commentBox.highlightOverlay) {
+    // The selected overlay and the current hover overlay may differ.
+    if (commentBox?.highlightOverlay && commentBox.highlightOverlay !== hoverOverlay) {
       commentBox.highlightOverlay.remove();
-      hoverOverlay = null;
     }
     
     removeCommentBox();
@@ -3218,13 +3192,14 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
     commentBox.innerHTML = `
       <textarea
         class="float-comment-input"
-        placeholder="What needs to be fixed? (paste an image to attach a reference)"
+        aria-label="Feedback description"
+        placeholder="What needs to be changed? Markdown supported."
         autofocus
       ></textarea>
       <div class="float-comment-attachments"></div>
       <div class="float-comment-actions">
         <button class="float-comment-cancel">Cancel</button>
-        <button class="float-comment-submit">Submit (Enter)</button>
+        <button class="float-comment-submit" aria-label="Submit (Return)">Submit ⏎</button>
       </div>
     `;
     
@@ -3233,8 +3208,8 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
     container.appendChild(commentBox);
     
     // Position near cursor (using actual mouse coordinates)
-    const boxWidth = 320;
-    const boxHeight = 120; // Approximate height
+    const boxWidth = 360;
+    const boxHeight = 200; // Approximate height
     const padding = 10;
     
     // Calculate optimal position near cursor
@@ -3262,10 +3237,10 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
     // Final adjustment after measuring actual box dimensions
     const boxRect = commentBox.getBoundingClientRect();
     if (boxRect.right > window.innerWidth) {
-      commentBox.style.left = `${window.innerWidth - boxRect.width - padding}px`;
+      commentBox.style.left = `${Math.max(padding, window.innerWidth - boxRect.width - padding)}px`;
     }
     if (boxRect.bottom > window.innerHeight) {
-      commentBox.style.top = `${window.innerHeight - boxRect.height - padding}px`;
+      commentBox.style.top = `${Math.max(padding, window.innerHeight - boxRect.height - padding)}px`;
     }
     
     const textarea = commentBox.querySelector('textarea');
@@ -3441,27 +3416,8 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
     }
   });
 
-  function removeDeepSelectBadge() {
-    if (deepSelectBadge) {
-      deepSelectBadge.remove();
-      deepSelectBadge = null;
-    }
-    document.body.classList.remove('float-deep-select-active');
-  }
-
-  function updateDeepSelectBadge(depth, total, x, y, show) {
-    removeDeepSelectBadge();
-    if (!show || total <= 1) {
-      return;
-    }
-
-    deepSelectBadge = document.createElement('div');
-    deepSelectBadge.className = 'float-deep-select-badge';
-    deepSelectBadge.textContent = `Layer ${depth}/${total}`;
-    deepSelectBadge.style.left = `${Math.min(x + 12, window.innerWidth - 120)}px`;
-    deepSelectBadge.style.top = `${Math.min(y + 12, window.innerHeight - 32)}px`;
-    document.body.appendChild(deepSelectBadge);
-    document.body.classList.add('float-deep-select-active');
+  function setDeepSelectActive(active) {
+    document.body.classList.toggle('float-deep-select-active', active);
   }
 
   function refreshPickAtPointer(clientX, clientY) {
@@ -3478,14 +3434,14 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
     if (!pick.element) {
       hoveredElement = null;
       removeHighlight();
-      removeDeepSelectBadge();
+      setDeepSelectActive(false);
       return null;
     }
 
     hoveredElement = pick.element;
     const isDeep = deepSelectIndex > 0 && pick.total > 1;
     highlightElement(pick.element, isDeep);
-    updateDeepSelectBadge(pick.depth, pick.total, clientX, clientY, isDeep);
+    setDeepSelectActive(isDeep);
     return pick.element;
   }
 
@@ -3599,7 +3555,7 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
 
   // Mouse move handler
   document.addEventListener('mousemove', (e) => {
-    if (!commentMode || commentBox) return; // Don't highlight if comment box is open
+    if (!commentMode || commentBox || annotationCapturePending) return;
 
     // Use composedPath() to properly detect if hovering over Shadow DOM elements
     const path = e.composedPath();
@@ -3827,6 +3783,12 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
   document.addEventListener('click', (e) => {
     if (!commentMode) return;
     if (isEventInMoatUI(e)) return;
+    if (commentBox || annotationCapturePending) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (commentBox) shakeCommentBox();
+      return;
+    }
 
     if (isDeepSelectModifier(e)) {
       e.preventDefault();
@@ -3920,7 +3882,6 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
 
   // Global variables for new notification system
   let hasPressedC = false;
-  let initialNotificationShown = false;
 
   // Listen for keyboard events
   document.addEventListener('keydown', (e) => {
@@ -3998,8 +3959,6 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
       if (drawingMode) {
         // Switch from drawing mode to comment mode
         exitDrawingMode();
-        // Dispatch event to remove persistent notification
-        window.dispatchEvent(new CustomEvent('moat:c-key-pressed'));
         
         // Mark that C has been pressed
         if (!hasPressedC) {
@@ -4010,8 +3969,6 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
         showNotification('Switched to Comment tool', 'info');
       } else if (!commentMode) {
         // Enter comment mode (not switching, just entering)
-        // Dispatch event to remove persistent notification
-        window.dispatchEvent(new CustomEvent('moat:c-key-pressed'));
         
         // Mark that C has been pressed
         if (!hasPressedC) {
@@ -4078,15 +4035,6 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
     }
   });
 
-  // Function to show initial notification after plugin loads
-  function showInitialNotification() {
-    if (!initialNotificationShown && !hasPressedC) {
-      initialNotificationShown = true;
-      // Show persistent notification until C is pressed
-      showNotification('Press C to make a comment', 'info', 'press-c-instruction');
-    }
-  }
-
   // Initialize Moat extension on page load
   async function initializeExtension() {
     try {
@@ -4108,11 +4056,6 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
       
       // Initialize UI
       initializeUI();
-      
-      // Show initial notification after a short delay to ensure UI is ready
-      setTimeout(() => {
-        showInitialNotification();
-      }, 1000);
       
       // Test annotation capture flow removed - no automatic testing
       
@@ -4349,13 +4292,8 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
 
     else if (request.type === 'SETUP_PROJECT') {
       setupProject().then((connected) => {
-        if (!connected) { sendResponse({ success: false }); return; }
-        // Notify side panel of connection
-        relayToSidePanel({
-          type: 'PROJECT_CONNECTED',
-          path: projectRoot || ''
-        });
-        sendResponse({ success: true });
+        // setupProject dispatches the connection event, which is relayed below.
+        sendResponse({ success: !!connected });
       }).catch(err => {
         console.error('Setup project failed:', err);
         sendResponse({ success: false, error: err.message });
@@ -4632,9 +4570,6 @@ For existing projects, also read \`.moat/moat-tasks-detail.json\` and its siblin
     console.log('🔧 Moat: Received trigger comment mode event from Tools button');
     
     if (!commentMode && !drawingMode) {
-      // Dispatch event to remove persistent notification (same as C key)
-      window.dispatchEvent(new CustomEvent('moat:c-key-pressed'));
-      
       // Mark that C has been pressed (for notification system)
       if (!hasPressedC) {
         hasPressedC = true;

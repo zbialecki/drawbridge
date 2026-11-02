@@ -39,6 +39,15 @@ test('only renders relayed task data for this panel tab and window, as text rath
   expect(document.getElementById('todo-badge').textContent).toBe('1');
 });
 
+test('shows a content-script error in the sidebar for the active tab only', async () => {
+  const { context, document } = await setup();
+  context.handleMessage({ type: 'SHOW_NOTIFICATION', message: 'Could not save annotation', notificationType: 'error', sourceTabId: 2, sourceWindowId: 10 });
+  expect(document.querySelectorAll('.notification')).toHaveLength(0);
+  context.handleMessage({ type: 'SHOW_NOTIFICATION', message: 'Could not save annotation', notificationType: 'error', sourceTabId: 1, sourceWindowId: 10 });
+  expect(document.querySelectorAll('.notification')).toHaveLength(1);
+  expect(document.querySelector('.notification.error').textContent).toBe('Could not save annotation');
+});
+
 test('drops a delayed response after a tab switch', async () => {
   const { context, chrome, read } = await setup();
   const sent = deferred();
@@ -70,6 +79,42 @@ test('does not route an action if the active tab changed during lookup', async (
   read('tabEpoch++; activeTabId = 2;');
   expect(await pending).toBeNull();
   expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
+});
+
+test('an annotation refresh does not reject when the tabs API disappears during tab lookup', async () => {
+  const { context, chrome } = await setup();
+  chrome.tabs.query.mockImplementation(async () => {
+    delete chrome.tabs;
+    return [{ id: 1, windowId: 10, url: 'https://example.com' }];
+  });
+  await expect(context.requestTasks()).resolves.toBeUndefined();
+});
+
+test('a page readiness check returns false if the tabs API disappears during lookup', async () => {
+  const { context, chrome } = await setup();
+  chrome.tabs.query.mockImplementation(async () => {
+    delete chrome.tabs;
+    return [{ id: 1, windowId: 10, url: 'https://example.com' }];
+  });
+  await expect(context.pingContentScript()).resolves.toBe(false);
+});
+
+test('a task refresh handles the extension runtime disappearing before the response', async () => {
+  const { context, chrome } = await setup();
+  const sent = deferred();
+  chrome.tabs.sendMessage.mockImplementation((id, message, callback) => sent.resolve(callback));
+  const refresh = context.requestTasks();
+  const reply = await sent.promise;
+  delete chrome.runtime;
+  expect(() => reply({ success: true })).not.toThrow();
+  await expect(refresh).resolves.toBeUndefined();
+});
+
+test('a synchronous messaging failure does not reject a task refresh or readiness check', async () => {
+  const { context, chrome } = await setup();
+  chrome.tabs.sendMessage.mockImplementation(() => { throw new Error('Extension context invalidated'); });
+  await expect(context.requestTasks()).resolves.toBeUndefined();
+  await expect(context.pingContentScript()).resolves.toBe(false);
 });
 
 async function setupDeleteAction(response, confirmed = true) {

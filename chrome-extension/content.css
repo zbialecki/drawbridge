@@ -51,11 +51,14 @@ body.float-drawing-mode * {
 /* Comment Box */
 .float-comment-box {
   position: fixed;
-  width: 300px;
+  width: min(360px, calc(100vw - 20px));
+  max-height: calc(100vh - 20px);
+  overflow-y: auto;
+  box-sizing: border-box;
   background: #ffffff;
   border-radius: 8px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
-  padding: 16px;
+  padding: 8px;
   z-index: 10001;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
@@ -90,9 +93,10 @@ body.float-drawing-mode * {
 }
 
 .float-comment-input {
+  display: block;
   width: 100%;
-  min-height: 80px;
-  padding: 12px;
+  min-height: 140px;
+  padding: 8px;
   border: 1px solid #e5e7eb;
   border-radius: 6px;
   font-size: 14px;
@@ -113,7 +117,7 @@ body.float-drawing-mode * {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
 .float-comment-actions button {
@@ -160,40 +164,6 @@ body.float-drawing-mode * {
   0%, 100% { transform: translateX(0); }
   10%, 30%, 50%, 70%, 90% { transform: translateX(-10px); }
   20%, 40%, 60%, 80% { transform: translateX(10px); }
-}
-
-/* Notification Toast */
-.float-notification {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  background: #1f2937;
-  color: #ffffff;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-size: 14px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 10002;
-  animation: float-slide-up 0.3s ease;
-  max-width: 300px;
-  pointer-events: auto;
-}
-
-.float-notification.float-error {
-  background: #dc2626;
-  color: white;
-}
-
-@keyframes float-slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 .float-comment-attachments {
@@ -245,22 +215,6 @@ body.float-drawing-mode * {
 
 body.float-deep-select-active {
   cursor: crosshair !important;
-}
-
-.float-deep-select-badge {
-  position: fixed;
-  z-index: 10000;
-  pointer-events: none;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-family: 'Inter', system-ui, sans-serif;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.2;
-  color: #fff;
-  background: rgba(245, 158, 11, 0.95);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  white-space: nowrap;
 }
 
 .float-hover-overlay.float-hover-overlay-deep {

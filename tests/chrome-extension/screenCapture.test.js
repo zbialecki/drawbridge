@@ -276,7 +276,7 @@ function setupPageShortcut() {
     sidePanelConnections: 1, isDrawing: false, screenCapturePending: false, annotationCapturePending: false,
     createScreenCommentBox: jest.fn(async () => ({ success: true })),
     showNotification: jest.fn(), setTimeout: jest.fn(), clearTimeout: jest.fn() });
-  vm.runInContext(section(contentSource, '  // Listen for keyboard events', '  // Function to show initial notification'), context);
+  vm.runInContext(section(contentSource, '  // Listen for keyboard events', '  // Initialize Moat extension on page load'), context);
   const event = (overrides = {}) => ({ key: 's', target: { matches: () => false, closest: () => null },
     preventDefault: jest.fn(), ...overrides });
   return { context, document, keydown, event };

@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const vm = require('node:vm');
+const { JSDOM, VirtualConsole } = require('jsdom');
 const { sourceSection } = require('../helpers/test-utils');
 const source = fs.readFileSync(require.resolve('../../chrome-extension/content_script.js'), 'utf8');
 
@@ -21,6 +22,71 @@ function setup(chrome = {}) {
 
 const area = { x: 10, y: 20, width: 30, height: 40 };
 
+test('page notifications are sent to the side panel without creating page UI', () => {
+  const { context } = setup();
+  context.document = { createElement: jest.fn() };
+  context.window.showMoatNotification = jest.fn();
+  context.relayToSidePanel = jest.fn();
+  vm.runInContext(sourceSection(source, '  // Show notification', '  // Process all'), context);
+  context.showNotification('Could not save annotation', 'error');
+  expect(context.relayToSidePanel).toHaveBeenCalledWith({
+    type: 'SHOW_NOTIFICATION', message: 'Could not save annotation', notificationType: 'error'
+  });
+  expect(context.window.showMoatNotification).not.toHaveBeenCalled();
+  expect(context.document.createElement).not.toHaveBeenCalled();
+});
+
+test('extension initialization does not show the old comment prompt', async () => {
+  const context = vm.createContext({
+    initializeUtilities: async () => true,
+    initializeProject: async () => {}, initializeUI: jest.fn(),
+    showNotification: jest.fn(), setTimeout: jest.fn(),
+    console: { log() {}, error() {} }
+  });
+  vm.runInContext(sourceSection(source, '  // Initialize Moat extension on page load', '  // Initialize UI components'), context);
+  await context.initializeExtension();
+  expect(context.initializeUI).toHaveBeenCalledTimes(1);
+  expect(context.showNotification).not.toHaveBeenCalled();
+  expect(context.setTimeout).not.toHaveBeenCalled();
+});
+
+test('a save failure appears in the sidebar and leaves the page untouched', async () => {
+  const page = new JSDOM('');
+  const panelHtml = fs.readFileSync(require.resolve('../../chrome-extension/sidepanel/sidepanel.html'), 'utf8');
+  const panelSource = fs.readFileSync(require.resolve('../../chrome-extension/sidepanel/sidepanel.js'), 'utf8');
+  const sidebar = new JSDOM(panelHtml, { runScripts: 'outside-only', url: 'https://extension.test/' });
+  try {
+    await new Promise(resolve => sidebar.window.addEventListener('load', resolve, { once: true }));
+    const panel = sidebar.getInternalVMContext();
+    panel.chrome = { runtime: {}, tabs: {} };
+    panel.console = { log() {}, warn() {}, error() {} };
+    vm.runInContext(panelSource, panel);
+    vm.runInContext('activeTabId = 1; panelWindowId = 10;', panel);
+
+    const context = vm.createContext({
+      window: page.window, document: page.window.document,
+      chrome: { runtime: { sendMessage: jest.fn(async message => {
+        panel.handleMessage({ ...message.payload, sourceTabId: 1, sourceWindowId: 10 });
+      }) } },
+      addToQueue: jest.fn(async () => { throw new Error('Permission denied'); }),
+      console: { error() {} }
+    });
+    vm.runInContext(sourceSection(source, '  function relayToSidePanel(', '  // Load tasks for side panel'), context);
+    vm.runInContext(sourceSection(source, '  // Show notification', '  // Process all'), context);
+    vm.runInContext(sourceSection(source, '  async function submitCommentAnnotation(', '  // Wire clipboard-image paste'), context);
+    const button = { disabled: false };
+    const box = { querySelector: () => button };
+    expect(await context.submitCommentAnnotation(box, { content: 'Keep this draft' })).toBe(false);
+    expect(sidebar.window.document.querySelector('.notification.error').textContent)
+      .toContain('Permission denied');
+    expect(page.window.document.body.children).toHaveLength(0);
+    expect(button.disabled).toBe(false);
+  } finally {
+    page.window.close();
+    sidebar.window.close();
+  }
+});
+
 test('a missing extension runtime does not throw or reject when relaying an annotation update', async () => {
   const { context } = setup();
   await expect(Promise.resolve().then(() => context.relayToSidePanel({ type: 'TASK_UPDATED' }))).resolves.toBeUndefined();
@@ -35,7 +101,33 @@ test('successful storage is not reported as failed when the runtime disappears',
   const { context, taskStore } = setup();
   await expect(context.saveAnnotationWithNewSystem({ id: 'annotation-1' })).resolves.toBe(true);
   expect(taskStore.saveAnnotation).toHaveBeenCalledTimes(1);
-  expect(context.showNotification).toHaveBeenCalledWith('Saved to 26-11-01 15-42');
+  expect(context.showNotification).not.toHaveBeenCalled();
+});
+
+test('saving does not wake stale page listeners from an invalidated extension context', async () => {
+  const errors = [];
+  const virtualConsole = new VirtualConsole();
+  virtualConsole.on('jsdomError', error => errors.push(error));
+  const dom = new JSDOM('', { virtualConsole });
+  try {
+    const staleListener = jest.fn(() => {
+      const oldChrome = {};
+      oldChrome.runtime.sendMessage({ type: 'RELAY_TO_SIDEPANEL' });
+    });
+    dom.window.addEventListener('moat:tasks-updated', staleListener);
+    const sendMessage = jest.fn(async () => {});
+    const { context, taskStore } = setup({ runtime: { sendMessage } });
+    context.window = dom.window;
+    context.CustomEvent = dom.window.CustomEvent;
+    await expect(context.saveAnnotationWithNewSystem({ id: 'annotation-1' })).resolves.toBe(true);
+    expect(taskStore.saveAnnotation).toHaveBeenCalledTimes(1);
+    expect(staleListener).not.toHaveBeenCalled();
+    expect(errors).toHaveLength(0);
+    expect(sendMessage).toHaveBeenCalledWith({ type: 'RELAY_TO_SIDEPANEL',
+      payload: { type: 'ANNOTATION_CREATED', taskId: 'annotation-1' } });
+  } finally {
+    dom.window.close();
+  }
 });
 
 test('a closed side panel is still handled as a rejected message, without an unhandled rejection', async () => {
