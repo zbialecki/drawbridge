@@ -105,6 +105,24 @@ body {
   min-width: 0;
 }
 
+.header:has(.connection-status:is(.connected, .reconnect-offer)) {
+  display: grid;
+  grid-template-columns: minmax(64px, 1fr) minmax(0, 160px) minmax(64px, 1fr);
+}
+
+.header:has(.connection-status.reconnect-offer) {
+  position: relative;
+  grid-template-columns: minmax(72px, 1fr) minmax(0, 160px) minmax(72px, 1fr);
+}
+
+.header:has(.connection-status:is(.connected, .reconnect-offer)) .header-right {
+  display: contents;
+}
+
+.header:has(.connection-status:is(.connected, .reconnect-offer)) #settings-btn {
+  justify-self: end;
+}
+
 .header-btn {
   width: var(--header-control-height);
   height: var(--header-control-height);
@@ -234,10 +252,19 @@ body {
 
 /* Connection Status (in header) */
 .connection-status {
+  position: relative;
   display: flex;
   align-items: center;
   min-width: 0;
   gap: var(--header-gap);
+}
+
+.connection-status:is(.connected, .reconnect-offer) {
+  width: 100%;
+}
+
+.connection-status.reconnect-offer {
+  position: static;
 }
 
 /* Disconnected state: show blue button only */
@@ -270,12 +297,18 @@ body {
   flex-shrink: 0;
 }
 
-/* Connected state: project button */
-.project-btn {
-  display: none;
-  align-items: center;
-  gap: 6px;
+/* Keep the alternative folder action beside settings while reconnect is centered. */
+.connection-status.reconnect-offer #choose-btn {
+  position: absolute;
+  top: var(--panel-inset);
+  right: calc(var(--panel-inset) + var(--header-control-height) + var(--header-gap));
+}
+
+/* Project and reconnect buttons share the same surface. */
+.project-btn,
+.connection-status.reconnect-offer .connect-btn-reuse {
   height: var(--header-control-height);
+  width: 100%;
   min-width: 0;
   max-width: 100%;
   padding: 0 10px;
@@ -287,9 +320,36 @@ body {
   font-family: inherit;
 }
 
-.project-btn:hover {
+.project-btn {
+  display: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.connection-status.reconnect-offer .connect-btn-reuse {
+  position: relative;
+  padding-left: 22px;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.connection-status.reconnect-offer .connect-btn-reuse::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transform: translateY(-50%);
+}
+
+.project-btn:hover,
+.connection-status.reconnect-offer .connect-btn-reuse:hover {
   background: var(--bg-secondary);
   border-color: var(--border-strong);
+  opacity: 1;
 }
 
 .status-dot {
@@ -308,8 +368,9 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
   min-width: 0;
-  max-width: 100px;
+  text-align: left;
 }
 
 .project-btn .chevron {
@@ -338,8 +399,9 @@ body {
 
 /* Project menu positioning */
 .dropdown-menu.project-menu {
-  right: calc(var(--panel-inset) + var(--header-control-height) + var(--header-gap));
-  left: auto;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .menu-divider {

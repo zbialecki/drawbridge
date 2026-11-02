@@ -43,7 +43,7 @@ Names use local time: `YY-MM-DD HH-mm`. Additional annotations in that minute ge
 - `screenshot.png` is present only if capture succeeded.
 - `reference-N.ext` files are present only when images were pasted.
 
-The side panel reloads these folders and writes status changes to their existing files. Deleting an annotation deletes its folder and associated images. **Clear Screenshots** removes screenshots but preserves comments and pasted reference images.
+The side panel reloads these folders and writes status changes to their existing files. Deleting an annotation deletes its folder and associated images.
 
 New annotations always use the selected folder directly. New annotation folders are not automatically git-ignored.
 

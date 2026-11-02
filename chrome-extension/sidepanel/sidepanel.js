@@ -249,26 +249,6 @@ function setupEventListeners() {
       } else if (action === 'refresh') {
         showNotification('Refreshing data...', 'info');
         requestTasks();
-      } else if (action === 'clear-screenshots') {
-        const store = annotationStore;
-        if (!store) return;
-        const count = (await store.loadTasksFromFile()).filter(task => task.screenshotPath).length;
-
-        if (count === 0) {
-          showNotification('No screenshots to clear', 'info');
-          return;
-        }
-
-        if (confirm(`Clear ${count} screenshot${count !== 1 ? 's' : ''}? This cannot be undone.`)) {
-          try {
-            await store.clearScreenshots();
-            showNotification(`${count} screenshot${count !== 1 ? 's' : ''} cleared`, 'success');
-            thumbnailCache.clear();
-            requestTasks();
-          } catch {
-            showNotification('Failed to clear screenshots', 'error');
-          }
-        }
       }
     });
   });
@@ -543,6 +523,7 @@ function updateConnectionBanner() {
     connectionBanner.classList.add('disconnected');
   }
   const offer = !isConnected ? folderOffer : null;
+  connectionBanner.classList.toggle('reconnect-offer', !!offer?.reconnect);
   reuseBtn.style.display = offer ? 'block' : 'none';
   reuseBtn.textContent = offer ? `${offer.reconnect ? 'Reconnect' : 'Use'} ${offer.path}` : '';
   reuseBtn.title = reuseBtn.textContent;

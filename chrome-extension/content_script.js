@@ -93,9 +93,9 @@
       cursor: 'crosshair',
       draw: function(ctx, x, y, width, height) {
         ctx.strokeStyle = '#F59E0B';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1;
         ctx.setLineDash([]);
-        ctx.strokeRect(x, y, width, height);
+        ctx.strokeRect(x + 0.5, y + 0.5, Math.max(0, width - 1), Math.max(0, height - 1));
         ctx.fillStyle = 'rgba(245, 158, 11, 0.1)';
         ctx.fillRect(x, y, width, height);
       }
@@ -1553,8 +1553,8 @@
       top: ${rect.y + window.scrollY}px;
       width: ${rect.width}px;
       height: ${rect.height}px;
-      border: 3px solid ${borderColor};
-      border-radius: 4px;
+      border: 1px solid ${borderColor};
+      border-radius: 0;
       background-color: ${bgColor};
       pointer-events: none;
       z-index: 9998;
