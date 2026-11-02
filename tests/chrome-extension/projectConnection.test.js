@@ -25,12 +25,11 @@ test('connecting uses the selected folder and installs commands without creating
     },
     chrome: { runtime: { getURL: value => value }, storage: { local: { remove: jest.fn(async () => {}) } } },
     fetch: async filename => ({ ok: true, status: 200, text: async () => fs.readFileSync(path.resolve(__dirname, '../../chrome-extension', filename), 'utf8') }),
-    localStorage: { setItem: jest.fn(), getItem: () => null },
     initializeUtilitiesWithRetry: async () => { taskStore.initialize(context.window.directoryHandle); },
-    canUseNewTaskSystem: () => true, markdownGenerator: {}, CustomEvent: class {},
+    CustomEvent: class {},
     showNotification: jest.fn(), console: { log() {}, warn() {}, error() {} }
   });
-  vm.runInContext(sourceSection(source, '  async function setupProject(', '  // Generate fallback workflow template'), context);
+  vm.runInContext(sourceSection(source, '  async function setupProject(', '  // Generate fallback bridge.md template'), context);
   expect(await context.setupProject()).toBe(true);
   expect(context.window.directoryHandle).toBe(fixture.directory);
   expect(fixture.exists('.moat')).toBe(false);
@@ -56,15 +55,12 @@ async function persistedConnection() {
 }
 
 function connectionContext() {
-  const data = new Map([
-    ['moat.connection', 'old connection'], ['moat.project.https://example.com', 'project'], ['unrelated', 'keep']
-  ]);
+  const data = new Map([['unrelated', 'keep']]);
   const storage = { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
   const context = vm.createContext({ window, localStorage: storage, MoatPersistence,
-    projectRoot: 'project', markdownFileHandle: null, connectionEventDispatched: true,
-    relayToSidePanel: jest.fn(), checkLegacyConnection: jest.fn(),
+    projectRoot: 'project', connectionEventDispatched: true,
+    relayToSidePanel: jest.fn(), dispatchNotConnected: jest.fn(),
     console: { log() {}, warn() {}, error() {} } });
-  vm.runInContext(fs.readFileSync(require.resolve('../../chrome-extension/utils/safeStorage'), 'utf8'), context);
   return { context, data };
 }
 
@@ -76,7 +72,7 @@ test('restoring a connection returns the selected root without creating files', 
   expect(fs.readdirSync(fixture.root)).toEqual([]);
 });
 
-test('disconnect uses the real persistence and safe-storage interfaces to forget only this project', async () => {
+test('disconnect uses the real persistence interface to forget only this project', async () => {
   const persistence = await persistedConnection();
   const { context, data } = connectionContext();
   let listener;
@@ -98,10 +94,10 @@ test('a stored disconnect flag clears the connection without attempting automati
   context.chrome = { storage: { local: {
     get: jest.fn(async () => ({ [flag]: true })), remove: jest.fn(async () => {})
   } } };
-  vm.runInContext(sourceSection(source, '  async function initializeProject(', '  // Check for legacy localStorage connections'), context);
+  vm.runInContext(sourceSection(source, '  async function initializeProject(', '  // Tell the side panel that no project is connected'), context);
   await context.initializeProject();
-  expect(context.checkLegacyConnection).not.toHaveBeenCalled();
+  expect(context.dispatchNotConnected).not.toHaveBeenCalled();
   expect(await persistence.getDirectoryHandle('project_https://example.com')).toBeNull();
-  expect(data.has('moat.connection')).toBe(false);
+  expect([...data]).toEqual([['unrelated', 'keep']]);
   expect(context.chrome.storage.local.remove).toHaveBeenCalledWith(flag);
 });

@@ -27,7 +27,7 @@ test('page notifications are sent to the side panel without creating page UI', (
   context.document = { createElement: jest.fn() };
   context.window.showMoatNotification = jest.fn();
   context.relayToSidePanel = jest.fn();
-  vm.runInContext(sourceSection(source, '  // Show notification', '  // Process all'), context);
+  vm.runInContext(sourceSection(source, '  // Show notification', '  // Add annotation to queue'), context);
   context.showNotification('Could not save annotation', 'error');
   expect(context.relayToSidePanel).toHaveBeenCalledWith({
     type: 'SHOW_NOTIFICATION', message: 'Could not save annotation', notificationType: 'error'
@@ -72,7 +72,7 @@ test('a save failure appears in the sidebar and leaves the page untouched', asyn
       console: { error() {} }
     });
     vm.runInContext(sourceSection(source, '  function relayToSidePanel(', '  // Load tasks for side panel'), context);
-    vm.runInContext(sourceSection(source, '  // Show notification', '  // Process all'), context);
+    vm.runInContext(sourceSection(source, '  // Show notification', '  // Add annotation to queue'), context);
     vm.runInContext(sourceSection(source, '  async function submitCommentAnnotation(', '  // Wire clipboard-image paste'), context);
     const button = { disabled: false };
     const box = { querySelector: () => button };

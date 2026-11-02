@@ -20,10 +20,6 @@ Thumbs.db
 *.swo
 *~
 
-# Moat annotation streams (user-generated content)
-**/.moat-stream.jsonl
-**/moat-tasks.md
-
 # Chrome extension build artifacts
 build/
 dist/
@@ -75,7 +71,6 @@ tests/e2e/
 # Yarn Integrity file
 .yarn-integrity 
 # Drawbridge project-specific files
-.moat/
 .claude/
 
 # Local agent coordination notes

@@ -25,17 +25,12 @@ test('the build includes runtime resources and excludes development or generated
   for (const resource of manifestResources()) {
     expect(shouldExclude(resource)).toBe(false);
   }
-  expect(['background.test.js', 'utils/annotationStore.test.js', '.moat/config.json']
+  expect(['background.test.js', 'utils/annotationStore.test.js']
     .filter(resource => !shouldExclude(resource))).toEqual([]);
 });
 
-test('the annotation store loads after its dependencies and before the content script', () => {
+test('the annotation store loads before the content script', () => {
   const scripts = manifest.content_scripts[0].js;
-  const store = scripts.indexOf('utils/annotationStore.js');
-  expect(scripts).toEqual(expect.arrayContaining([
-    'utils/taskStore.js', 'utils/markdownGenerator.js', 'utils/annotationStore.js', 'content_script.js'
-  ]));
-  expect(store).toBeGreaterThan(scripts.indexOf('utils/taskStore.js'));
-  expect(store).toBeGreaterThan(scripts.indexOf('utils/markdownGenerator.js'));
-  expect(store).toBeLessThan(scripts.indexOf('content_script.js'));
+  expect(scripts).toEqual(expect.arrayContaining(['utils/annotationStore.js', 'content_script.js']));
+  expect(scripts.indexOf('utils/annotationStore.js')).toBeLessThan(scripts.indexOf('content_script.js'));
 });

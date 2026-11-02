@@ -7,7 +7,7 @@ Annotate a running page and save each comment, screenshot, and metadata together
 1. Open `chrome://extensions`, enable Developer mode, and load this directory unpacked.
 2. Pin Drawbridge and open the page you want to annotate.
 3. Click the extension icon, then **Connect Project**, and select an output folder.
-4. Approve browser file access. The selected folder is used directly; new annotations do not go in `.moat`.
+4. Approve browser file access. The selected folder is used directly.
 
 Choose your code project's root to install `/bridge` commands there. If you choose another output folder, tell your AI tool where to find it. For `file://` pages, enable **Allow access to file URLs** in the extension's details.
 
@@ -45,7 +45,7 @@ Names use local time: `YY-MM-DD HH-mm`. Additional annotations in that minute ge
 
 The side panel reloads these folders and writes status changes to their existing files. Deleting an annotation deletes its folder and associated images. **Clear Screenshots** removes screenshots but preserves comments and pasted reference images.
 
-Existing `.moat/moat-tasks-detail.json`, checklist, and screenshots are still readable in place. Loading them does not migrate, rewrite, or delete them. New annotations always use the selected folder directly. New annotation folders are not automatically git-ignored.
+New annotations always use the selected folder directly. New annotation folders are not automatically git-ignored.
 
 ## Process with an AI Tool
 
@@ -60,8 +60,7 @@ Run `/bridge` or `bridge`, optionally prefixed with `step`, `batch`, or `yolo`. 
 - `content_script.js`: annotation UI, project connection, and side-panel messages.
 - `content.css`: annotation styles.
 - `sidepanel/`: native side-panel UI.
-- `utils/annotationStore.js`: timestamp naming, per-annotation files, image loading, updates, deletion, and existing-project reads.
-- `utils/taskStore.js` and `utils/markdownGenerator.js`: legacy task/checklist support.
+- `utils/annotationStore.js`: timestamp naming, per-annotation files, image loading, updates, and deletion.
 - `utils/persistence.js`: remembered directory handles and permission checks.
 - `rules-templates/bridge.md`: AI task-processing instructions.
 
@@ -70,5 +69,3 @@ Run `/bridge` or `bridge`, optionally prefixed with `step`, `batch`, or `yolo`. 
 - Reload the extension and refresh an already-open page after a storage-format update.
 - Reconnect from the project menu if Chrome's file permissions expire.
 - For missing annotations, verify the selected output folder and check its timestamped directories.
-- A missing `.moat` directory is normal for new projects.
-- Debug the connection with `window.moatDebug.checkSystemStatus()` and saved files with `window.moatDebug.verifyFiles()`.

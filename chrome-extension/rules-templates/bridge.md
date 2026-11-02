@@ -44,8 +44,4 @@ Respect explicit dependencies and task-specific `mode` fields. For conflicting r
 
 Re-read files before each write because the extension or another agent may have updated them. Preserve IDs, timestamps, full comments, image links, and other metadata. Update the existing files in place; keep all annotation files in their original folder.
 
-## Existing projects
-
-Also check `.moat/moat-tasks-detail.json` and its sibling `moat-tasks.md` when they already exist. That legacy JSON is an array. Resolve legacy image paths relative to `.moat/`, follow the same status lifecycle, and update the legacy checklist. Leave existing data in place; new annotations use timestamped folders.
-
-If no pending annotations are found, say so. Ask the user to connect the intended output folder, press `C` for an element or `R` for a rectangle, and submit a comment. A missing `.moat` folder is normal for new projects.
+If no pending annotations are found, say so. Ask the user to connect the intended output folder, press `C` for an element or `R` for a rectangle, and submit a comment.

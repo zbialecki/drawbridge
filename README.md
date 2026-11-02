@@ -13,7 +13,7 @@ It is built for browser-to-code feedback loops with Cursor, Claude Code, Codex, 
 - Capture selector data, element context, bounding boxes, and screenshots with each note.
 - Sync tasks into your project as readable markdown and structured JSON.
 - Track task status through `to do`, `doing`, and `done`.
-- Deploy the `/bridge` workflow for Claude Code, Codex, and Windsurf, plus Drawbridge workflow rules for AI agents.
+- Deploy the `/bridge` workflow for Claude Code, Codex, and Windsurf.
 - Recover cleanly after extension reloads: the toolbar icon can inject missing scripts into existing tabs and toggles the existing drawer instead of stacking duplicates.
 
 ## Setup

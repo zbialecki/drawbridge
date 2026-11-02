@@ -37,14 +37,12 @@ test('connecting a folder shows one confirmation in the side panel', async () =>
       chrome: { runtime: { getURL: value => value, onMessage: { addListener(fn) { messageListener = fn; } } },
         storage: { local: { remove: jest.fn(async () => {}) } } },
       fetch: async filename => ({ ok: true, text: async () => fs.readFileSync(path.resolve(__dirname, '../../chrome-extension', filename), 'utf8') }),
-      localStorage: { setItem() {} },
       initializeUtilitiesWithRetry: async () => { taskStore.initialize(context.window.directoryHandle); },
-      canUseNewTaskSystem: () => true, markdownGenerator: {},
       CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
       relayToSidePanel: message => panel.handleMessage({ ...message, sourceTabId: 1, sourceWindowId: 10 }),
       showNotification: jest.fn(), console: { log() {}, warn() {}, error() {} }
     });
-    vm.runInContext(sourceSection(contentSource, '  async function setupProject(', '  // Generate fallback workflow template'), context);
+    vm.runInContext(sourceSection(contentSource, '  async function setupProject(', '  // Generate fallback bridge.md template'), context);
     vm.runInContext(sourceSection(contentSource, '  chrome.runtime.onMessage.addListener(', '  // Helper to relay messages'), context);
     vm.runInContext(sourceSection(contentSource, '  // Relay project connection events to side panel', '  // Relay task update events to side panel'), context);
     const response = deferred();

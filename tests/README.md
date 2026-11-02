@@ -22,7 +22,7 @@ npm test -- tests/chrome-extension/utils/annotationStore.test.js --runInBand
 
 Jest is configured in `package.json` to discover tests only under `tests/` and clear/restore mocks between tests. Tests use temporary directories and mock clipboard commands; they do not write into your projects or change your clipboard.
 
-The suite focuses on saved data, failures/retries, messaging, and user interactions. Repeated legacy integration tests and overlapping helper-level tests were removed; useful legacy compatibility checks remain in the storage suites.
+The suite focuses on saved data, failures/retries, messaging, and user interactions. Repeated integration tests and overlapping helper-level tests were removed.
 
 ## Limits
 

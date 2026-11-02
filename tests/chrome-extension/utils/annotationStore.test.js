@@ -183,87 +183,13 @@ test('rejects image paths escaping the selected folder', async () => {
   }
 });
 
-test('existing .moat annotations remain readable without migration or writes on reconnect', async () => {
-  fs.mkdirSync(path.join(fixture.root, '.moat/screenshots'), { recursive: true });
-  const original = JSON.stringify([{ id: 'old', ...taskData, status: 'to do', timestamp: 1, screenshotPath: './screenshots/old.png' }]);
+test('a .moat folder is ignored and left untouched', async () => {
+  fs.mkdirSync(path.join(fixture.root, '.moat'));
+  const original = JSON.stringify([{ id: 'old', ...taskData, status: 'to do', timestamp: 1 }]);
   fs.writeFileSync(path.join(fixture.root, '.moat/moat-tasks-detail.json'), original);
-  fs.writeFileSync(path.join(fixture.root, '.moat/screenshots/old.png'), 'old image');
-  await store.loadTasksFromFile();
-  expect(store.tasks[0].screenshotPath).toBe('./.moat/screenshots/old.png');
-  expect(fixture.read('.moat/moat-tasks-detail.json')).toBe(original);
-  expect(await (await store.getImageFile(store.tasks[0].screenshotPath)).text()).toBe('old image');
   await store.saveAnnotation(annotation(), taskData);
-  expect(metadata().id).toBe('one');
+  await store.loadTasksFromFile();
+  expect(store.getAllTasks().map(task => task.id)).toEqual(['one']);
   expect(fixture.read('.moat/moat-tasks-detail.json')).toBe(original);
-  await store.updateTaskStatusAndSave('old', 'done');
-  expect(JSON.parse(fixture.read('.moat/moat-tasks-detail.json'))[0].status).toBe('done');
-  expect(fixture.read('.moat/moat-tasks.md')).toContain('[x] Button');
-  expect(fixture.read('.moat/moat-tasks.md')).toContain('Make this button smaller.');
-});
-
-test('deleting a legacy task removes its files and description while preserving shared images', async () => {
-  fs.mkdirSync(path.join(fixture.root, '.moat/screenshots'), { recursive: true });
-  const tasks = [
-    { id: 'old-one', ...taskData, comment: 'Remove this description', status: 'to do', timestamp: 1,
-      screenshotPath: './screenshots/old.png', attachments: ['./screenshots/reference.png', './screenshots/shared.png'] },
-    { id: 'old-two', ...taskData, comment: 'Keep this description', status: 'to do', timestamp: 2,
-      screenshotPath: './screenshots/other.png', attachments: ['screenshots/shared.png'] }
-  ];
-  fs.writeFileSync(path.join(fixture.root, '.moat/moat-tasks-detail.json'), JSON.stringify(tasks));
-  for (const name of ['old.png', 'reference.png', 'shared.png', 'other.png']) {
-    fs.writeFileSync(path.join(fixture.root, '.moat/screenshots', name), 'image');
-  }
-
-  await store.loadTasksFromFile();
-  await store.removeTaskAndSave('old-one');
-
-  expect(JSON.parse(fixture.read('.moat/moat-tasks-detail.json')).map(task => task.id)).toEqual(['old-two']);
-  expect(fixture.read('.moat/moat-tasks.md')).not.toContain('Remove this description');
-  expect(fixture.read('.moat/moat-tasks.md')).toContain('Keep this description');
-  expect(fixture.exists('.moat/screenshots/old.png')).toBe(false);
-  expect(fixture.exists('.moat/screenshots/reference.png')).toBe(false);
-  expect(fixture.exists('.moat/screenshots/shared.png')).toBe(true);
-  expect(fixture.exists('.moat/screenshots/other.png')).toBe(true);
-});
-
-test('a failed legacy image deletion leaves the task available to retry', async () => {
-  fs.mkdirSync(path.join(fixture.root, '.moat/screenshots'), { recursive: true });
-  const tasks = [{ id: 'old', ...taskData, status: 'to do', timestamp: 1, screenshotPath: './screenshots/old.png' }];
-  fs.writeFileSync(path.join(fixture.root, '.moat/moat-tasks-detail.json'), JSON.stringify(tasks));
-  fs.writeFileSync(path.join(fixture.root, '.moat/screenshots/old.png'), 'image');
-  await store.loadTasksFromFile();
-  jest.spyOn(store.legacyStore.directoryHandle, 'getDirectoryHandle').mockResolvedValue({
-    removeEntry: async () => { throw new DOMException('Permission denied', 'NotAllowedError'); }
-  });
-  jest.spyOn(console, 'error').mockImplementation(() => {});
-
-  await expect(store.removeTaskAndSave('old')).rejects.toThrow('Permission denied');
-  expect(store.tasks.map(task => task.id)).toEqual(['old']);
-  expect(JSON.parse(fixture.read('.moat/moat-tasks-detail.json'))).toEqual(tasks);
-  expect(fixture.exists('.moat/screenshots/old.png')).toBe(true);
-});
-
-test('a missing legacy screenshot does not prevent deleting its task', async () => {
-  fs.mkdirSync(path.join(fixture.root, '.moat'), { recursive: true });
-  const tasks = [{ id: 'old', ...taskData, status: 'to do', timestamp: 1, screenshotPath: './screenshots/missing.png' }];
-  fs.writeFileSync(path.join(fixture.root, '.moat/moat-tasks-detail.json'), JSON.stringify(tasks));
-  await store.loadTasksFromFile();
-  jest.spyOn(console, 'warn').mockImplementation(() => {});
-
-  expect(await store.removeTaskAndSave('old')).toBe(true);
-  expect(JSON.parse(fixture.read('.moat/moat-tasks-detail.json'))).toEqual([]);
-  expect(store.tasks).toEqual([]);
-});
-
-test('deleting a legacy task rejects image paths outside the screenshots folder', async () => {
-  fs.mkdirSync(path.join(fixture.root, '.moat/screenshots'), { recursive: true });
-  const tasks = [{ id: 'old', ...taskData, status: 'to do', timestamp: 1, screenshotPath: './screenshots/../important.png' }];
-  fs.writeFileSync(path.join(fixture.root, '.moat/moat-tasks-detail.json'), JSON.stringify(tasks));
-  fs.writeFileSync(path.join(fixture.root, '.moat/important.png'), 'keep');
-  await store.loadTasksFromFile();
-  jest.spyOn(console, 'error').mockImplementation(() => {});
-
-  await expect(store.removeTaskAndSave('old')).rejects.toThrow('Invalid screenshot path format');
-  expect(fixture.read('.moat/important.png')).toBe('keep');
-  expect(JSON.parse(fixture.read('.moat/moat-tasks-detail.json'))).toEqual(tasks);
+  await expect(store.getImageFile('./.moat/screenshots/old.png')).rejects.toThrow('Invalid annotation image path');
 });

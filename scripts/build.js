@@ -22,7 +22,6 @@ const DIST_DIR = path.join(ROOT_DIR, 'dist');
 // Files and directories to exclude
 const EXCLUDE_PATTERNS = [
   'tests',
-  '.moat',
   '*.test.js',
   'ARCHITECTURE.md',
   'README.md'
@@ -31,8 +30,6 @@ const EXCLUDE_PATTERNS = [
 // Helper function to check if a path should be excluded
 function shouldExclude(relativePath) {
   return EXCLUDE_PATTERNS.some(pattern => {
-    // The top-level README is documentation; rules-templates/README.md is a manifest resource.
-    if (pattern === 'README.md') return relativePath === pattern;
     if (pattern.includes('*')) {
       // Handle wildcard patterns
       const regex = new RegExp(pattern.replace('*', '.*'));

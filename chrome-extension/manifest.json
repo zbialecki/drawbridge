@@ -25,12 +25,9 @@
     {
       "matches": ["<all_urls>"],
       "js": [
-        "utils/safeStorage.js",
         "utils/persistence.js",
         "utils/buildInfo.js",
         "utils/elementPicker.js",
-        "utils/taskStore.js",
-        "utils/markdownGenerator.js",
         "utils/annotationStore.js",
         "content_script.js"
       ],
@@ -59,8 +56,6 @@
       "resources": [
         "icons/drawbridge-icon-dark.svg",
         "icons/drawbridge-icon-light.svg",
-        "rules-templates/drawbridge-workflow.md",
-        "rules-templates/README.md",
         "rules-templates/bridge.md"
       ],
       "matches": ["<all_urls>"]

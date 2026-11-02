@@ -7,7 +7,6 @@
 - `sidepanel/` displays tasks and sends commands to the content script. It does not hold filesystem handles.
 - `utils/annotationStore.js` owns the saved annotation layout: folder naming, complete saves, discovery, updates, image reads, and deletion.
 - `utils/persistence.js` stores the selected directory handle in IndexedDB and checks browser permissions on restoration.
-- `utils/taskStore.js` and `utils/markdownGenerator.js` support existing `.moat` projects.
 
 ## Storage
 
@@ -34,9 +33,7 @@ Write failures propagate to the editor, which retains the draft and references f
 
 Status updates re-read the annotation's metadata, preserve unrelated fields, and update the same metadata/comment files. Deletion checks the folder name, metadata format, and task ID before removing the annotation folder. Image paths are checked before filesystem traversal. Clearing screenshots removes only capture images, not pasted references.
 
-### Existing projects
-
-The store also reads an existing `.moat/moat-tasks-detail.json` array without creating a `.moat` directory or rewriting old files during connection. Legacy images remain relative to that directory. Explicit changes to a legacy task use the existing task store and checklist generator. New annotations always use timestamped folders in the output root.
+### Project files
 
 There is no new shared JSON index or markdown checklist at the root, and connecting must not overwrite project files such as `README.md` or `config.json`.
 
@@ -56,4 +53,4 @@ The time separator is a hyphen because Chrome's File System Access API rejects c
 
 ## Verification
 
-`utils/annotationStore.test.js` exercises real temporary files through directory-handle mocks, including naming, same-minute collisions, simultaneous saves, retries, metadata preservation, existing-project reads, image paths, updates, and deletion. Content-script tests cover editor retention and side-panel operations. Real Chrome permission prompts and screenshot rendering still require browser verification.
+`utils/annotationStore.test.js` exercises real temporary files through directory-handle mocks, including naming, same-minute collisions, simultaneous saves, retries, metadata preservation, image paths, updates, and deletion. Content-script tests cover editor retention and side-panel operations. Real Chrome permission prompts and screenshot rendering still require browser verification.

@@ -77,7 +77,7 @@ function setupScreen() {
       readAsDataURL(file) { this.result = file.dataUrl; this.onload(); }
     }
   });
-  vm.runInContext(section(contentSource, '  function convertAnnotationToTask(', '  // Check if utilities'), context);
+  vm.runInContext(section(contentSource, '  function convertAnnotationToTask(', '  // Keep the editor and its images available'), context);
   vm.runInContext(section(contentSource, '  async function submitCommentAnnotation(', '  /**\n   * Capture screenshot'), context);
   vm.runInContext(section(contentSource, '  function removeCommentBox()', '  // Enter comment mode'), context);
   context.addToQueue = jest.fn(async annotation => store.saveAnnotation(annotation, context.convertAnnotationToTask(annotation)));

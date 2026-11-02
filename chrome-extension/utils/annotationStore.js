@@ -1,10 +1,14 @@
 // One annotation per timestamped folder in the user-selected directory.
 (function () {
-  const { TaskStore, TASK_STATUS, generateUUID, validateTaskObject } =
-    typeof module !== 'undefined' && module.exports ? require('./taskStore.js') : window.MoatTaskStore;
-  const markdown = typeof module !== 'undefined' && module.exports
-    ? require('./markdownGenerator.js') : window.MoatMarkdownGenerator;
+  const TASK_STATUS = { TO_DO: 'to do', DOING: 'doing', DONE: 'done' };
   const FOLDER_PATTERN = /^\d{2}-\d{2}-\d{2} \d{2}-\d{2}(?:_[1-9]\d*)?$/;
+
+  function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+  }
 
   function timestampFolder(timestamp) {
     const date = new Date(timestamp);
@@ -34,7 +38,17 @@
   }
 
   function validateMetadata(task) {
-    validateTaskObject(task);
+    for (const field of ['id', 'title', 'comment', 'status', 'timestamp']) {
+      if (!Object.prototype.hasOwnProperty.call(task, field)) {
+        throw new Error(`Task missing required field: ${field}`);
+      }
+    }
+    if (task.selector != null && typeof task.selector !== 'string') {
+      throw new Error(`Task selector must be a string or null, got: ${typeof task.selector}`);
+    }
+    if (!Object.values(TASK_STATUS).includes(task.status)) {
+      throw new Error(`Invalid task status: ${task.status}`);
+    }
     if (task.format !== 'drawbridge-annotation') throw new Error('Not a Drawbridge annotation');
     if (task.screenshotPath && task.screenshotPath !== './screenshot.png') {
       throw new Error('Invalid screenshot path');
@@ -58,19 +72,12 @@
     constructor() {
       this.tasks = [];
       this.directoryHandle = null;
-      this.legacyStore = null;
     }
 
     initialize(directory) { this.directoryHandle = directory; }
     isInitialized() { return !!this.directoryHandle; }
     getAllTasks() { return [...this.tasks].sort((a, b) => b.timestamp - a.timestamp); }
-    getAllTasksChronological() { return [...this.tasks].sort((a, b) => a.timestamp - b.timestamp); }
     getTaskById(id) { return this.tasks.find(task => task.id === id) || null; }
-    getTaskStats() {
-      const stats = { total: this.tasks.length, 'to do': 0, doing: 0, done: 0 };
-      for (const task of this.tasks) stats[task.status]++;
-      return stats;
-    }
 
     async loadTasksFromFile() {
       if (!this.directoryHandle) throw new Error('No folder connected');
@@ -89,25 +96,6 @@
         }
       }
 
-      // Read existing projects without moving, rewriting, or creating legacy files.
-      this.legacyStore = null;
-      try {
-        const directory = await this.directoryHandle.getDirectoryHandle('.moat');
-        const file = await (await directory.getFileHandle('moat-tasks-detail.json')).getFile();
-        const legacyTasks = JSON.parse((await file.text()).trim() || '[]');
-        legacyTasks.forEach(validateTaskObject);
-        this.legacyStore = new TaskStore();
-        this.legacyStore.initialize(directory);
-        this.legacyStore.tasks = legacyTasks;
-        tasks.push(...legacyTasks.map(task => ({
-          ...task,
-          legacy: true,
-          screenshotPath: task.screenshotPath ? `./.moat/${task.screenshotPath.replace(/^\.\//, '')}` : '',
-          attachments: (task.attachments || []).map(p => `./.moat/${p.replace(/^\.\//, '')}`)
-        })));
-      } catch (error) {
-        if (error.name !== 'NotFoundError') console.warn('Could not load existing .moat tasks:', error);
-      }
       this.tasks = tasks;
       return this.getAllTasks();
     }
@@ -213,10 +201,6 @@
       return { blob: new Blob([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], { type: mime }), extension };
     }
 
-    async addTaskAndSave(taskData) {
-      return this.saveAnnotation({ ...taskData, content: taskData.comment }, taskData);
-    }
-
     async annotationDirectory(task) {
       if (!FOLDER_PATTERN.test(task.folderName)) throw new Error('Invalid annotation folder');
       const directory = await this.directoryHandle.getDirectoryHandle(task.folderName);
@@ -229,21 +213,12 @@
     async updateTask(id, changes) {
       const task = this.getTaskById(id);
       if (!task) throw new Error('Annotation not found');
-      if (task.legacy) {
-        const original = this.legacyStore.getTaskById(id);
-        Object.assign(original, changes);
-        validateTaskObject(original);
-        await this.legacyStore.saveTasksToFile();
-        await writeFile(this.legacyStore.directoryHandle, 'moat-tasks.md', markdown.generateMarkdownFromTasks(this.legacyStore.tasks));
-        Object.assign(task, changes);
-      } else {
-        const { directory, metadata } = await this.annotationDirectory(task);
-        Object.assign(metadata, changes);
-        validateMetadata(metadata);
-        await writeFile(directory, 'comment.md', commentMarkdown(metadata));
-        await writeFile(directory, 'metadata.json', JSON.stringify(metadata, null, 2));
-        Object.assign(task, displayTask(metadata, task.folderName));
-      }
+      const { directory, metadata } = await this.annotationDirectory(task);
+      Object.assign(metadata, changes);
+      validateMetadata(metadata);
+      await writeFile(directory, 'comment.md', commentMarkdown(metadata));
+      await writeFile(directory, 'metadata.json', JSON.stringify(metadata, null, 2));
+      Object.assign(task, displayTask(metadata, task.folderName));
       return task;
     }
 
@@ -258,33 +233,20 @@
       return this.updateTask(id, { comment, content: comment, lastModified: Date.now() });
     }
 
-    async saveTasksToFile() {
-      for (const task of this.tasks) {
-        await this.updateTask(task.id, { status: task.status, comment: task.comment });
-      }
-      return true;
-    }
-
     async removeTaskAndSave(id) {
       const task = this.getTaskById(id);
       if (!task) return false;
-      if (task.legacy) {
-        await this.legacyStore.removeTaskAndSave(id);
-        await writeFile(this.legacyStore.directoryHandle, 'moat-tasks.md', markdown.generateMarkdownFromTasks(this.legacyStore.tasks));
-      } else {
-        await this.annotationDirectory(task);
-        await this.directoryHandle.removeEntry(task.folderName, { recursive: true });
-      }
+      await this.annotationDirectory(task);
+      await this.directoryHandle.removeEntry(task.folderName, { recursive: true });
       this.tasks = this.tasks.filter(task => task.id !== id);
       return true;
     }
 
     imagePath(path) {
       const parts = path.replace(/^\.\//, '').split('/');
-      const legacy = parts.length === 3 && parts[0] === '.moat' && parts[1] === 'screenshots';
       const current = parts.length === 2 && FOLDER_PATTERN.test(parts[0]) &&
         /^(?:screenshot\.png|reference-\d+\.[a-z0-9]+)$/.test(parts[1]);
-      if ((!legacy && !current) || parts.some(p => !p || p === '..' || p.includes('\\'))) {
+      if (!current || parts.some(p => !p || p === '..' || p.includes('\\'))) {
         throw new Error('Invalid annotation image path');
       }
       return parts;
