@@ -23,7 +23,7 @@ test('dismissing a comment removes the highlight even after another page click',
       hoverOverlay: null, highlightedElement: null, hoveredElement: null,
       deepSelectIndex: 0, pickStack: [], lastPointer: {}, lastTopPickElement: null,
       drilledOnPointerdown: false, getElementPicker: () => picker,
-      isDeepSelectModifier: () => false, captureScreenshotNative: jest.fn(async () => null),
+      isDeepSelectModifier: () => false, captureFrameworkContext: async () => null, captureScreenshotNative: jest.fn(async () => null),
       enablePasteImages: box => { box.pastedImages = []; },
       setTimeout: callback => callback(), console: { log() {}, warn() {}, info() {}, error() {} }
     });
@@ -64,6 +64,7 @@ test('cancelling during screenshot capture does not reopen the comment editor', 
       commentCaptureVersion: 0, hoverOverlay: overlay, highlightedElement: element,
       deepSelectIndex: 0, pickStack: [], lastTopPickElement: null,
       setDeepSelectActive: jest.fn(),
+      captureFrameworkContext: async () => null,
       captureScreenshotNative: () => { started.resolve(); return capture.promise; },
       enablePasteImages: box => { box.pastedImages = []; },
       setTimeout: callback => callback(), console: { log() {}, warn() {}, error() {} }

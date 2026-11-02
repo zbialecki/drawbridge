@@ -25,16 +25,23 @@
     {
       "matches": ["<all_urls>"],
       "js": [
-        "utils/persistence.js",
         "utils/buildInfo.js",
         "utils/elementPicker.js",
-        "utils/annotationStore.js",
         "content_script.js"
       ],
       "css": ["content.css"],
       "run_at": "document_end"
     }
   ],
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+D",
+        "mac": "MacCtrl+Shift+D"
+      },
+      "description": "Open or close the Drawbridge side panel"
+    }
+  },
   "action": {
     "default_title": "Drawbridge",
     "default_icon": {
@@ -55,8 +62,7 @@
     {
       "resources": [
         "icons/drawbridge-icon-dark.svg",
-        "icons/drawbridge-icon-light.svg",
-        "rules-templates/bridge.md"
+        "icons/drawbridge-icon-light.svg"
       ],
       "matches": ["<all_urls>"]
     }

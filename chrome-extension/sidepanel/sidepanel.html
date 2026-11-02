@@ -23,6 +23,7 @@
       </div>
       <div class="header-right">
         <div id="connection-banner" class="connection-status disconnected">
+          <button id="reuse-btn" class="connect-btn-primary connect-btn-reuse" style="display: none"></button>
           <button id="connect-btn" class="connect-btn-primary">Connect Project</button>
           <button id="project-btn" class="project-btn">
             <span class="status-dot"></span>
@@ -117,6 +118,9 @@
     <div id="notification-container" class="notification-container"></div>
   </div>
 
+  <script src="../utils/persistence.js"></script>
+  <script src="../utils/annotationStore.js"></script>
+  <script src="projectSetup.js"></script>
   <script src="sidepanel.js" type="module"></script>
 </body>
 </html>

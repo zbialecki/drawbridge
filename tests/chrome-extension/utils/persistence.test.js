@@ -1,6 +1,6 @@
 const { MoatPersistence } = require('../../../chrome-extension/utils/persistence');
 const { indexedDBFixture } = require('../../helpers/indexed-db');
-const originalNavigator = Object.getOwnPropertyDescriptor(global, 'navigator');
+const ORIGIN = 'https://example.com';
 const NOW = Date.parse('2026-11-01T15:42:00Z');
 const DAY = 24 * 60 * 60 * 1000;
 let fixture;
@@ -17,15 +17,10 @@ beforeEach(() => {
     requestPermission: jest.fn(async () => 'granted'),
     async *values() {}
   };
-  global.window = { location: { origin: 'https://example.com' }, indexedDB, showDirectoryPicker: jest.fn() };
-  Object.defineProperty(global, 'navigator', { configurable: true, value: { userAgent: 'test browser' } });
   persistence = new MoatPersistence();
 });
 afterEach(() => {
-  delete global.window;
   delete global.indexedDB;
-  if (originalNavigator) Object.defineProperty(global, 'navigator', originalNavigator);
-  else delete global.navigator;
   jest.useRealTimers();
   jest.restoreAllMocks();
 });
@@ -33,7 +28,7 @@ afterEach(() => {
 test('initializes the compatible database schema once per instance', async () => {
   const open = jest.spyOn(indexedDB, 'open');
   const db = await persistence.initialize();
-  expect(open).toHaveBeenCalledWith('MoatPersistence', 1);
+  expect(open).toHaveBeenCalledWith('DrawbridgeProjects', 1);
   expect(db.objectStoreNames.contains('directoryHandles')).toBe(true);
   expect(db.transaction(['directoryHandles']).objectStore('directoryHandles').indexNames).toEqual(['origin', 'timestamp']);
   expect(await persistence.initialize()).toBe(db);
@@ -41,9 +36,9 @@ test('initializes the compatible database schema once per instance', async () =>
 });
 
 test('persists a connection that a fresh instance can restore after a restart', async () => {
-  expect(await persistence.persistProjectConnection(handle, 'test-project')).toBe(true);
+  expect(await persistence.persistProjectConnection(handle, 'test-project', ORIGIN)).toBe(true);
   const restarted = new MoatPersistence();
-  const restored = await restarted.restoreProjectConnection();
+  const restored = await restarted.restoreProjectConnection({ origin: ORIGIN });
   expect(restored).toMatchObject({ success: true, path: 'test-project', timestamp: NOW, restored: true });
   expect(restored.directoryHandle).toBe(handle);
   expect(handle.queryPermission).toHaveBeenCalledWith({ mode: 'readwrite' });
@@ -54,14 +49,29 @@ test('persists a connection that a fresh instance can restore after a restart', 
   }]);
 });
 
-test('does not restore another page origin\'s project', async () => {
-  await persistence.persistProjectConnection(handle, 'first-project');
-  window.location.origin = 'https://other.example.com';
-  expect(await new MoatPersistence().restoreProjectConnection()).toEqual({ success: false, reason: 'No stored connection' });
-  await persistence.persistProjectConnection(handle, 'second-project');
-  expect((await persistence.restoreProjectConnection()).path).toBe('second-project');
-  window.location.origin = 'https://example.com';
-  expect((await new MoatPersistence().restoreProjectConnection()).path).toBe('first-project');
+test('keeps each site\'s connection separate', async () => {
+  const other = 'https://other.example.com';
+  await persistence.persistProjectConnection(handle, 'first-project', ORIGIN);
+  expect(await new MoatPersistence().restoreProjectConnection({ origin: other })).toEqual({ success: false, reason: 'No stored connection' });
+  await persistence.persistProjectConnection(handle, 'second-project', other);
+  expect((await persistence.restoreProjectConnection({ origin: other })).path).toBe('second-project');
+  expect((await new MoatPersistence().restoreProjectConnection({ origin: ORIGIN })).path).toBe('first-project');
+});
+
+test('forgets one site without affecting another', async () => {
+  const other = 'https://other.example.com';
+  await persistence.persistProjectConnection(handle, 'first-project', ORIGIN);
+  await persistence.persistProjectConnection(handle, 'second-project', other);
+  await persistence.removeProjectConnection(ORIGIN);
+  expect((await persistence.getAllHandles()).map(record => record.origin)).toEqual([other]);
+});
+
+test('offers the most recently connected folder', async () => {
+  expect(await persistence.getMostRecentConnection()).toBeNull();
+  await persistence.persistProjectConnection(handle, 'older', ORIGIN);
+  jest.setSystemTime(NOW + DAY);
+  await persistence.persistProjectConnection(handle, 'newer', 'https://other.example.com');
+  expect((await persistence.getMostRecentConnection()).path).toBe('newer');
 });
 
 test('cleanup removes only old handles, preserving recent handles and the exact age boundary', async () => {
@@ -80,8 +90,8 @@ test('rejects an invalid directory handle without storing it', async () => {
 
 test('expired permission requires reconnection without prompting on page load', async () => {
   handle.queryPermission.mockResolvedValue('prompt');
-  await persistence.persistProjectConnection(handle, 'test-project');
-  expect(await persistence.restoreProjectConnection()).toMatchObject({
+  await persistence.persistProjectConnection(handle, 'test-project', ORIGIN);
+  expect(await persistence.restoreProjectConnection({ origin: ORIGIN })).toMatchObject({
     success: false, requiresReconnection: true, path: 'test-project'
   });
   expect(handle.requestPermission).not.toHaveBeenCalled();
@@ -89,27 +99,27 @@ test('expired permission requires reconnection without prompting on page load', 
 });
 
 test('a stored handle that can no longer access its directory is not restored', async () => {
-  await persistence.persistProjectConnection(handle, 'test-project');
+  await persistence.persistProjectConnection(handle, 'test-project', ORIGIN);
   handle.values = () => { throw new Error('Directory moved'); };
-  expect(await persistence.restoreProjectConnection()).toMatchObject({ success: false, reason: 'Cannot access selected folder' });
+  expect(await persistence.restoreProjectConnection({ origin: ORIGIN })).toMatchObject({ success: false, reason: 'Cannot access selected folder' });
 });
 
 test('database initialization failures reject initialization and report failed persistence', async () => {
   fixture.state.fail = 'open';
   await expect(persistence.initialize()).rejects.toThrow('open denied');
-  expect(await persistence.persistProjectConnection(handle, 'test-project')).toBe(false);
+  expect(await persistence.persistProjectConnection(handle, 'test-project', ORIGIN)).toBe(false);
 });
 
 test('a failed database write does not report a connection as persisted', async () => {
   fixture.state.fail = 'put';
-  expect(await persistence.persistProjectConnection(handle, 'test-project')).toBe(false);
+  expect(await persistence.persistProjectConnection(handle, 'test-project', ORIGIN)).toBe(false);
   expect(await persistence.getAllHandles()).toEqual([]);
 });
 
 test('a database read failure does not restore a connection or delete its stored record', async () => {
-  await persistence.persistProjectConnection(handle, 'test-project');
+  await persistence.persistProjectConnection(handle, 'test-project', ORIGIN);
   fixture.state.fail = 'get';
-  expect(await persistence.restoreProjectConnection()).toMatchObject({ success: false, reason: 'get denied' });
+  expect(await persistence.restoreProjectConnection({ origin: ORIGIN })).toMatchObject({ success: false, reason: 'get denied' });
   fixture.state.fail = null;
   expect(await persistence.getAllHandles()).toHaveLength(1);
 });

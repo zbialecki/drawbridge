@@ -1,13 +1,14 @@
 /**
- * Moat Persistence Utility - Directory Handle Management
- * 
- * Provides robust persistence for File System Access API directory handles
- * using IndexedDB with permission verification and graceful fallbacks.
+ * Directory handle storage for the side panel.
+ *
+ * Handles are saved per site, in the extension's own IndexedDB. This must only run on an
+ * extension page: a content script shares IndexedDB with the page, which would give that
+ * page's scripts the handle.
  */
 
 class MoatPersistence {
   constructor() {
-    this.DB_NAME = 'MoatPersistence';
+    this.DB_NAME = 'DrawbridgeProjects';
     this.DB_VERSION = 1;
     this.STORE_NAME = 'directoryHandles';
     this.db = null;
@@ -62,7 +63,6 @@ class MoatPersistence {
       const record = {
         id: projectId,
         handle: directoryHandle,
-        origin: window.location.origin,
         timestamp: Date.now(),
         path: metadata.path || 'Unknown',
         ...metadata
@@ -265,14 +265,13 @@ class MoatPersistence {
   /**
    * Complete persistence workflow: store handle with all metadata
    */
-  async persistProjectConnection(directoryHandle, projectPath) {
+  async persistProjectConnection(directoryHandle, projectPath, origin) {
     try {
-      const projectId = `project_${window.location.origin}`;
-      
+      const projectId = `project_${origin}`;
+
       const metadata = {
         path: projectPath,
-        origin: window.location.origin,
-        userAgent: navigator.userAgent,
+        origin,
         connectedAt: new Date().toISOString()
       };
 
@@ -295,9 +294,9 @@ class MoatPersistence {
    * visit. We therefore queryPermission() only; if not 'granted' we hand back
    * `requiresReconnection` and let the UI prompt on a real user click.
    */
-  async restoreProjectConnection({ allowPermissionPrompt = false } = {}) {
+  async restoreProjectConnection({ origin, allowPermissionPrompt = false }) {
     try {
-      const projectId = `project_${window.location.origin}`;
+      const projectId = `project_${origin}`;
       const record = await this.getDirectoryHandle(projectId);
 
       if (!record) {
@@ -349,6 +348,21 @@ class MoatPersistence {
       console.error('🔴 Moat Persistence: Restoration failed:', error);
       return { success: false, reason: error.message };
     }
+  }
+
+  /**
+   * Forget the folder connected to a site
+   */
+  removeProjectConnection(origin) {
+    return this.removeDirectoryHandle(`project_${origin}`);
+  }
+
+  /**
+   * The most recently connected folder, offered when connecting another site
+   */
+  async getMostRecentConnection() {
+    const records = await this.getAllHandles();
+    return records.sort((a, b) => b.timestamp - a.timestamp)[0] ?? null;
   }
 
   /**

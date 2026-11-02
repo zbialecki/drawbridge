@@ -65,7 +65,8 @@ function setupScreen() {
     document, window, console: { error: jest.fn() }, Date, Math,
     commentBox: null, screenBackdrop: null, screenCapturePending: false, annotationCapturePending: false,
     drawingMode: false, commentMode: false, isDrawing: false, sessionId: 'session-1',
-    setTimeout: callback => callback(),
+    setTimeout: callback => callback(), clearTimeout: () => {},
+    captureFrameworkContext: async () => null,
     captureScreenshotNative: jest.fn(async (viewport, padding) => {
       expect(document.body.children).toHaveLength(0);
       return { dataUrl: image, viewport: { ...viewport, padding } };
@@ -80,6 +81,7 @@ function setupScreen() {
   vm.runInContext(section(contentSource, '  function convertAnnotationToTask(', '  // Keep the editor and its images available'), context);
   vm.runInContext(section(contentSource, '  async function submitCommentAnnotation(', '  /**\n   * Capture screenshot'), context);
   vm.runInContext(section(contentSource, '  function removeCommentBox()', '  // Enter comment mode'), context);
+  context.isUserAction = () => true;
   context.addToQueue = jest.fn(async annotation => store.saveAnnotation(annotation, context.convertAnnotationToTask(annotation)));
   return { context, document, documentListeners, previousFocus, fixture, store };
 }
@@ -152,7 +154,7 @@ describe('screen feedback', () => {
       constructor() { this.width = 2400; this.height = 1600; }
       set src(value) { this.onload(); }
     };
-    vm.runInContext(section(contentSource, '  async function captureScreenshotNative(', '  async function saveAnnotationWithNewSystem('), context);
+    vm.runInContext(section(contentSource, '  async function captureScreenshotNative(', '  // Show notifications in the native side panel'), context);
     expect(await context.createScreenCommentBox()).toEqual({ success: true });
     expect(drawImage).toHaveBeenCalledWith(expect.any(Object), 0, 0, 2400, 1600, 0, 0, 2400, 1600);
     expect(canvas.width).toBe(2400);
@@ -276,7 +278,7 @@ function setupPageShortcut() {
     sidePanelConnections: 1, isDrawing: false, screenCapturePending: false, annotationCapturePending: false,
     createScreenCommentBox: jest.fn(async () => ({ success: true })),
     showNotification: jest.fn(), setTimeout: jest.fn(), clearTimeout: jest.fn() });
-  vm.runInContext(section(contentSource, '  // Listen for keyboard events', '  // Initialize Moat extension on page load'), context);
+  vm.runInContext(section(contentSource, '  // Listen for keyboard events', '  // Listen for messages from background script'), context);
   const event = (overrides = {}) => ({ key: 's', target: { matches: () => false, closest: () => null },
     preventDefault: jest.fn(), ...overrides });
   return { context, document, keydown, event };

@@ -23,20 +23,24 @@ async function setup() {
 }
 afterEach(() => { dom?.window.close(); dom = null; });
 
-test('only renders relayed task data for this panel tab and window, as text rather than HTML', async () => {
-  const { context, read, document } = await setup();
-  read('isConnected = true;');
-  context.handleMessage({ type: 'TASKS_LOADED', sourceTabId: 2, sourceWindowId: 10, tasks: [{ id: 'wrong' }] });
-  context.handleMessage({ type: 'TASKS_LOADED', sourceTabId: 1, sourceWindowId: 11, tasks: [{ id: 'wrong' }] });
-  expect(read('tasks')).toHaveLength(0);
+test('renders task data as text rather than HTML', async () => {
+  const { read, context, document } = await setup();
   const comment = '<img src=x onerror="alert(1)">';
-  context.handleMessage({ type: 'TASKS_LOADED', sourceTabId: 1, sourceWindowId: 10,
-    tasks: [{ id: 'right', comment, status: 'to do' }] });
-  expect(read('tasks[0].id')).toBe('right');
+  context.__tasks = [{ id: 'right', comment, status: 'to do' }];
+  read('isConnected = true; tasks = globalThis.__tasks; renderTasks(); updateBadges();');
   const content = document.querySelector('.task-content');
   expect(content.textContent).toBe(comment);
   expect(content.children).toHaveLength(0);
   expect(document.getElementById('todo-badge').textContent).toBe('1');
+});
+
+test('page messages cannot change the connection or the task list', async () => {
+  const { context, read } = await setup();
+  const relayed = { sourceTabId: 1, sourceWindowId: 10 };
+  context.handleMessage({ type: 'PROJECT_CONNECTED', path: 'forged', ...relayed });
+  context.handleMessage({ type: 'TASKS_LOADED', tasks: [{ id: 'forged' }], ...relayed });
+  expect(read('isConnected')).toBe(false);
+  expect(read('tasks')).toHaveLength(0);
 });
 
 test('shows a content-script error in the sidebar for the active tab only', async () => {
@@ -52,42 +56,20 @@ test('drops a delayed response after a tab switch', async () => {
   const { context, chrome, read } = await setup();
   const sent = deferred();
   chrome.tabs.sendMessage.mockImplementation((id, msg, callback) => sent.resolve(callback));
-  const pending = context.sendToContentScript({ type: 'GET_CONNECTION_STATUS' });
+  const pending = context.sendToContentScript({ type: 'ENTER_COMMENT_MODE' });
   const reply = await sent.promise;
   read('tabEpoch++; activeTabId = 2; contentScriptReady = false;');
-  reply({ connected: true, path: 'wrong project' });
+  reply({ success: true });
   expect(await pending).toBeNull();
   expect(read('contentScriptReady')).toBe(false);
 });
 
-test('an old connection check cannot clear a newer tab connection', async () => {
-  const { context, chrome, read } = await setup();
-  const sent = deferred();
-  chrome.tabs.sendMessage.mockImplementation((id, msg, callback) => sent.resolve(callback));
-  const pending = context.checkConnectionStatus();
-  const reply = await sent.promise;
-  read('tabEpoch++; activeTabId = 2; isConnected = true; projectPath = "new project";');
-  reply({ connected: false });
-  await pending;
-  expect(read('isConnected')).toBe(true);
-  expect(read('projectPath')).toBe('new project');
-});
-
 test('does not route an action if the active tab changed during lookup', async () => {
   const { context, chrome, read } = await setup();
-  const pending = context.sendToContentScript({ type: 'DELETE_TASK', taskId: 'old-task' });
+  const pending = context.sendToContentScript({ type: 'CAPTURE_SCREEN' });
   read('tabEpoch++; activeTabId = 2;');
   expect(await pending).toBeNull();
   expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
-});
-
-test('an annotation refresh does not reject when the tabs API disappears during tab lookup', async () => {
-  const { context, chrome } = await setup();
-  chrome.tabs.query.mockImplementation(async () => {
-    delete chrome.tabs;
-    return [{ id: 1, windowId: 10, url: 'https://example.com' }];
-  });
-  await expect(context.requestTasks()).resolves.toBeUndefined();
 });
 
 test('a page readiness check returns false if the tabs API disappears during lookup', async () => {
@@ -99,60 +81,48 @@ test('a page readiness check returns false if the tabs API disappears during loo
   await expect(context.pingContentScript()).resolves.toBe(false);
 });
 
-test('a task refresh handles the extension runtime disappearing before the response', async () => {
-  const { context, chrome } = await setup();
-  const sent = deferred();
-  chrome.tabs.sendMessage.mockImplementation((id, message, callback) => sent.resolve(callback));
-  const refresh = context.requestTasks();
-  const reply = await sent.promise;
-  delete chrome.runtime;
-  expect(() => reply({ success: true })).not.toThrow();
-  await expect(refresh).resolves.toBeUndefined();
-});
-
-test('a synchronous messaging failure does not reject a task refresh or readiness check', async () => {
+test('a synchronous messaging failure does not reject a page message or readiness check', async () => {
   const { context, chrome } = await setup();
   chrome.tabs.sendMessage.mockImplementation(() => { throw new Error('Extension context invalidated'); });
-  await expect(context.requestTasks()).resolves.toBeUndefined();
+  await expect(context.sendToContentScript({ type: 'CAPTURE_SCREEN' })).resolves.toBeNull();
   await expect(context.pingContentScript()).resolves.toBe(false);
 });
 
-async function setupDeleteAction(response, confirmed = true) {
+async function setupDeleteAction(removeTask, confirmed = true) {
   const { context, document, read } = await setup();
   context.confirm = jest.fn(() => confirmed);
-  context.sendToContentScript = jest.fn(async () => response);
   context.showNotification = jest.fn();
-  read('isConnected = true;');
-  context.handleMessage({ type: 'TASKS_LOADED', sourceTabId: 1, sourceWindowId: 10,
-    tasks: [{ id: 'task-1', comment: 'Delete this annotation', status: 'to do' }] });
-  return { context, async click() {
+  context.__store = { removeTaskAndSave: jest.fn(removeTask), loadTasksFromFile: jest.fn(async () => []) };
+  context.__tasks = [{ id: 'task-1', comment: 'Delete this annotation', status: 'to do' }];
+  read('isConnected = true; annotationStore = globalThis.__store; tasks = globalThis.__tasks; renderTasks();');
+  return { context, store: context.__store, async click() {
     document.querySelector('.delete-btn').click();
     await new Promise(setImmediate);
   } };
 }
 
-test('deleting a task sends its ID after confirmation', async () => {
-  const { context, click } = await setupDeleteAction({ success: true });
+test('deleting a task uses its ID after confirmation', async () => {
+  const { context, store, click } = await setupDeleteAction(async () => true);
   await click();
   expect(context.confirm).toHaveBeenCalledTimes(1);
-  expect(context.sendToContentScript).toHaveBeenCalledWith({ type: 'DELETE_TASK', taskId: 'task-1' }, false);
+  expect(store.removeTaskAndSave).toHaveBeenCalledWith('task-1');
   expect(context.showNotification).not.toHaveBeenCalled();
 });
 
 test('canceling task deletion leaves the task unchanged', async () => {
-  const { context, click } = await setupDeleteAction(null, false);
+  const { store, click } = await setupDeleteAction(async () => true, false);
   await click();
-  expect(context.sendToContentScript).not.toHaveBeenCalled();
+  expect(store.removeTaskAndSave).not.toHaveBeenCalled();
 });
 
 test('a failed task deletion is reported to the user', async () => {
-  const { context, click } = await setupDeleteAction({ success: false, error: 'Permission denied' });
+  const { context, click } = await setupDeleteAction(async () => { throw new Error('Permission denied'); });
   await click();
   expect(context.showNotification).toHaveBeenCalledWith('Could not delete task: Permission denied', 'error');
 });
 
-test('a disconnected page reports that deletion did not complete', async () => {
-  const { context, click } = await setupDeleteAction(null);
+test('deleting a task that no longer exists reports it', async () => {
+  const { context, click } = await setupDeleteAction(async () => false);
   await click();
-  expect(context.showNotification).toHaveBeenCalledWith('Could not delete task: Please refresh the page and try again.', 'error');
+  expect(context.showNotification).toHaveBeenCalledWith('Could not delete task: Task not found. Refresh and try again.', 'error');
 });

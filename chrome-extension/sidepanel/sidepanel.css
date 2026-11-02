@@ -237,6 +237,18 @@ body {
   opacity: 0.9;
 }
 
+.connect-btn-reuse {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connect-btn-primary.connect-btn-secondary {
+  background: transparent;
+  color: var(--text-muted);
+}
+
 /* Connected state: project button */
 .project-btn {
   display: none;

@@ -11,12 +11,22 @@ function setup(failure) {
   if (failure === 'directory') fixture.directory.getDirectoryHandle = async () => { throw new Error('Directory permission denied'); };
   const taskStore = new AnnotationStore();
   taskStore.initialize(fixture.directory);
-  const save = jest.fn(async annotation => taskStore.saveAnnotation(annotation, { title: 'Button', comment: annotation.content }));
-  const context = vm.createContext({ window: { directoryHandle: failure === 'disconnected' ? null : fixture.directory },
-    taskStore, console: { log() {}, error() {} }, Date,
-    saveAnnotationWithNewSystem: save, showNotification: jest.fn() });
+  // Stands in for the side panel, which receives a copy of the message.
+  const save = jest.fn(async ({ annotation, taskData }) => {
+    if (failure === 'disconnected') return { success: false, error: 'Connect a project in the Drawbridge side panel.' };
+    try {
+      const saved = await taskStore.saveAnnotation(annotation, taskData);
+      return { success: true, folderName: saved.folderName };
+    } catch (error) {
+      return { success: false, error: error.message, folderName: annotation.folderName };
+    }
+  });
+  const runtime = { sendMessage(message, reply) { save(structuredClone(message)).then(reply); } };
+  const context = vm.createContext({ chrome: { runtime }, console: { log() {}, error() {} }, Date,
+    Promise, convertAnnotationToTask: annotation => ({ title: 'Button', comment: annotation.content }), showNotification: jest.fn() });
   vm.runInContext(sourceSection(source, '  async function submitCommentAnnotation(', '  // Wire clipboard-image paste'), context);
-  vm.runInContext(sourceSection(source, '  async function addToQueue(', '  // Get user-friendly element label'), context);
+  vm.runInContext(sourceSection(source, '  // Folder access lives in the side panel', '  // Read React and Next.js details'), context);
+  vm.runInContext(sourceSection(source, '  // Add annotation to queue', '  // Get user-friendly element label'), context);
   const button = { disabled: false };
   const box = { pastedImages: ['data:image/png;base64,eA=='], querySelector: () => button };
   const annotation = { id: 'test', content: 'Keep this comment', pastedImages: box.pastedImages,
@@ -42,7 +52,7 @@ test('saves pasted images beside their comment and metadata', async () => {
   const task = taskStore.tasks[0];
   expect(fixture.read(`${task.folderName}/reference-1.png`)).toBe('x');
   expect(JSON.parse(fixture.read(`${task.folderName}/metadata.json`)).attachments).toEqual(['./reference-1.png']);
-  expect(save).toHaveBeenCalledWith(annotation);
+  expect(save.mock.calls[0][0].annotation.id).toBe(annotation.id);
 });
 
 test('a retry in a later minute keeps the original annotation folder', async () => {
@@ -64,7 +74,34 @@ test('prevents duplicate submissions during an outstanding save', async () => {
   const first = context.submitCommentAnnotation(box, annotation);
   await started.promise;
   expect(await context.submitCommentAnnotation(box, annotation)).toBe(false);
-  saved.resolve(true);
+  saved.resolve({ success: true, folderName: '26-11-01 15-42' });
   expect(await first).toBe(true);
   expect(save).toHaveBeenCalledTimes(1);
+});
+
+test('framework context is saved with the annotation, and a failed capture still saves', async () => {
+  const { context, box, annotation, save } = setup();
+  box.frameworkContext = Promise.resolve({ framework: { name: 'next', buildId: 'abc' }, react: { component: 'Save' } });
+  expect(await context.submitCommentAnnotation(box, annotation)).toBe(true);
+  expect(JSON.parse(fixture.read(`${annotation.folderName}/metadata.json`))).toMatchObject({
+    framework: { buildId: 'abc' }, react: { component: 'Save' }
+  });
+
+  const failed = { ...box, frameworkContext: Promise.resolve(null), isSubmitting: false, annotationTimestamp: undefined, annotationFolderName: undefined };
+  const second = { id: 'second', content: 'Without context', timestamp: annotation.timestamp + 60000 };
+  expect(await context.submitCommentAnnotation(failed, second)).toBe(true);
+  expect(save).toHaveBeenCalledTimes(2);
+  expect(JSON.parse(fixture.read(`${second.folderName}/metadata.json`)).react).toBeUndefined();
+});
+
+test('a closed side panel keeps the draft and says so on the page', async () => {
+  const { context, box, button, annotation } = setup();
+  context.chrome.runtime = {
+    lastError: { message: 'The message port closed before a response was received.' },
+    sendMessage(message, reply) { reply(undefined); }
+  };
+  expect(await context.submitCommentAnnotation(box, annotation)).toBe(false);
+  expect(context.showNotification).toHaveBeenCalledWith(expect.stringContaining('Open the Drawbridge side panel'), 'error');
+  expect(button.textContent).toContain('Open the Drawbridge side panel');
+  expect(button.disabled).toBe(false);
 });

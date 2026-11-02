@@ -17,8 +17,10 @@ function loadBackground({ sendMessage, insertCSS, executeScript } = {}) {
   global.self = global;
   global.importScripts = jest.fn(() => {
     require('../../chrome-extension/utils/buildInfo.js');
+    require('../../chrome-extension/utils/frameworkContext.js');
   });
   require('../../chrome-extension/utils/buildInfo.js');
+  require('../../chrome-extension/utils/frameworkContext.js');
 
   global.chrome = {
     sidePanel: { open: jest.fn(async () => {}) },
@@ -254,4 +256,39 @@ test('relay stamps source tab and window from sender rather than payload', () =>
   handler({ type: 'RELAY_TO_SIDEPANEL', payload: { type: 'TASKS_LOADED', tasks: [], sourceTabId: 99, sourceWindowId: 99 } }, { tab: { id: 7, windowId: 3 } }, () => {});
   expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'TASKS_LOADED', tasks: [], sourceTabId: 7, sourceWindowId: 3 });
   delete global.chrome;
+});
+
+describe('framework context capture', () => {
+  const sender = { tab: { id: 7, windowId: 3, url: 'http://localhost:3000/settings' }, frameId: 0 };
+  const respondWith = (executeScript) => {
+    loadBackground({ executeScript });
+    const handler = chrome.runtime.onMessage.addListener.mock.calls[0][0];
+    return new Promise(resolve => {
+      expect(handler({ type: 'CAPTURE_FRAMEWORK_CONTEXT', marker: 'mark' }, sender, resolve)).toBe(true);
+    });
+  };
+
+  test('runs the reader in the page world and sanitizes what it returns', async () => {
+    const executeScript = jest.fn((details, callback) => callback([{ result: {
+      framework: { name: 'next', mode: 'development', mcpAvailable: true, mcpEndpoint: 'https://evil.example/mcp' },
+      react: { component: 'SaveButton', source: '/etc/passwd:1:1' }
+    } }]));
+    const response = await respondWith(executeScript);
+    expect(executeScript.mock.calls[0][0]).toMatchObject({
+      target: { tabId: 7, frameIds: [0] }, world: 'MAIN', args: ['mark']
+    });
+    expect(response.framework.mcpEndpoint).toBe('http://localhost:3000/_next/mcp');
+    expect(response.react).toMatchObject({ component: 'SaveButton', source: null });
+  });
+
+  test('a page that cannot be scripted produces no context', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const response = await respondWith((details, callback) => {
+      chrome.runtime.lastError = { message: 'Cannot access this page' };
+      callback();
+      chrome.runtime.lastError = null;
+    });
+    expect(response).toBeNull();
+    warn.mockRestore();
+  });
 });

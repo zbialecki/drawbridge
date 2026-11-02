@@ -57,11 +57,13 @@ Run `/bridge` or `bridge`, optionally prefixed with `step`, `batch`, or `yolo`. 
 
 - `manifest.json`: extension configuration and script ordering.
 - `background.js`: toolbar action and native screenshot capture.
-- `content_script.js`: annotation UI, project connection, and side-panel messages.
+- `content_script.js`: annotation UI and side-panel messages. It has no file access.
 - `content.css`: annotation styles.
-- `sidepanel/`: native side-panel UI.
+- `sidepanel/`: native side-panel UI, and all access to the connected folder.
+- `utils/frameworkContext.js`: React and Next.js details read from the page.
 - `utils/annotationStore.js`: timestamp naming, per-annotation files, image loading, updates, and deletion.
-- `utils/persistence.js`: remembered directory handles and permission checks.
+- `sidepanel/projectSetup.js`: installs the `/bridge` commands in a connected folder.
+- `utils/persistence.js`: remembered directory handles and permission checks, for extension pages only.
 - `rules-templates/bridge.md`: AI task-processing instructions.
 
 ## Troubleshooting

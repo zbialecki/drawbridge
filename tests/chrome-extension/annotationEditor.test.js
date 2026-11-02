@@ -23,6 +23,8 @@ test.each(['comment', 'rectangle', 'screen'])('%s editor shows the updated promp
         dataUrl: 'data:image/png;base64,eA==', viewport: { ...viewport, padding }
       })),
       enablePasteImages: box => { box.pastedImages = []; },
+      captureFrameworkContext: async () => null,
+      isUserAction: () => true,
       submitCommentAnnotation, relayToSidePanel: jest.fn(),
       exitCommentMode: jest.fn(), exitDrawingMode: jest.fn(), removeDrawingCanvas: jest.fn(), removeCommentBox: jest.fn(),
       getSelector: () => '#target', validateSelector: () => true,
@@ -50,6 +52,13 @@ test.each(['comment', 'rectangle', 'screen'])('%s editor shows the updated promp
     textarea.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
     expect(submitCommentAnnotation).toHaveBeenCalledTimes(1);
     expect(submitCommentAnnotation.mock.calls[0][1].content).toBe('**Make this clearer.**');
+
+    // Page scripts can dispatch events on the editor, but those must not submit it.
+    vm.runInContext(sourceSection(source, '  // Page scripts can dispatch events', '  // Keep the editor and its images'), context);
+    submitCommentAnnotation.mockClear();
+    textarea.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    submit.click();
+    expect(submitCommentAnnotation).not.toHaveBeenCalled();
     await Promise.resolve();
   } finally {
     dom.window.close();

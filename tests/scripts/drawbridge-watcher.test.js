@@ -51,3 +51,20 @@ test('a failed clipboard command does not mark an annotation copied or change it
   expect(fixture.read(`${task.folderName}/metadata.json`)).toBe(before);
   expect(fs.readdirSync(fixture.root)).toEqual([task.folderName]);
 });
+
+test('the copied prompt includes component context when it was captured', async () => {
+  const store = new AnnotationStore();
+  store.initialize(fixture.directory);
+  await store.saveAnnotation({
+    id: 'react', timestamp: new Date(2026, 10, 1, 15, 42).getTime(), content: 'Smaller',
+    react: { component: 'SaveButton', componentEnv: 'client', source: 'app/SaveButton.js:4:10', route: 'app/page.js' },
+    framework: { name: 'next', buildId: 'abc123' }
+  }, { title: 'Button', comment: 'Smaller' });
+  processAnnotations(fixture.root);
+  const { input } = spawnSync.mock.calls[0][1];
+  expect(input).toContain('Component: SaveButton (client)');
+  expect(input).toContain('Source: app/SaveButton.js:4:10');
+  expect(input).toContain('Route: app/page.js');
+  expect(input).toContain('Build: abc123');
+});
+

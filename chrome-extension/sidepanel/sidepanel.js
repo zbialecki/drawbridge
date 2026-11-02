@@ -1,8 +1,9 @@
 /**
  * Drawbridge Side Panel
  *
- * Handles UI rendering and communication with content scripts.
- * File operations remain in the content script context.
+ * Handles UI rendering and owns access to the connected project folder.
+ * Folder handles stay on this extension page, where site scripts cannot reach them.
+ * Content scripts send annotations here to be saved.
  */
 
 // State
@@ -14,6 +15,11 @@ let currentTab = 'to do';
 let tasks = [];
 let isConnected = false;
 let projectPath = '';
+let panelOrigin = null;
+let annotationStore = null;
+// A folder this site can use in one click: its own after permission expired, or another site's.
+let folderOffer = null;
+const installedOrigins = new Set();
 let currentMode = null; // 'comment', 'drawing', 'screen', or null
 
 const trashIcon = `
@@ -29,6 +35,7 @@ const thumbnailCache = new Map();
 const taskContainer = document.getElementById('task-container');
 const connectionBanner = document.getElementById('connection-banner');
 const connectBtn = document.getElementById('connect-btn');
+const reuseBtn = document.getElementById('reuse-btn');
 const projectBtn = document.getElementById('project-btn');
 const projectMenu = document.getElementById('project-menu');
 const statusText = connectionBanner.querySelector('.status-text');
@@ -64,6 +71,9 @@ async function handleTabChange(info) {
   contentScriptReady = false;
   isConnected = false;
   projectPath = '';
+  panelOrigin = null;
+  annotationStore = null;
+  folderOffer = null;
   currentMode = null;
   tasks = [];
   thumbnailCache.clear();
@@ -75,10 +85,107 @@ async function handleTabChange(info) {
   if (epoch !== tabEpoch || !tab?.id) return;
   activeTabId = tab.id;
   panelWindowId = tab.windowId;
+  panelOrigin = tabOrigin(tab.url);
+  await restoreFolder(epoch);
+  // Pages such as chrome:// never have a content script to wait for.
+  if (epoch !== tabEpoch || !panelOrigin) return;
   const ready = await connectWithRetry(5);
   if (epoch !== tabEpoch || !ready) return;
   contentPort = chrome.tabs.connect(tab.id, { name: 'drawbridge-sidepanel' });
-  await checkConnectionStatus();
+}
+
+// Each site has its own connection, so one site's page cannot save into another site's folder.
+function tabOrigin(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'file:') return 'file://';
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+// Reconnect without prompting; permission prompts wait for a click in the panel.
+async function restoreFolder(epoch) {
+  const persistence = window.moatPersistence;
+  if (!panelOrigin || !persistence) return;
+  const origin = panelOrigin;
+  const restored = await persistence.restoreProjectConnection({ origin });
+  if (epoch !== tabEpoch) return;
+  if (restored.success) {
+    await openFolder(restored.directoryHandle, restored.path, origin);
+    return;
+  }
+  if (restored.requiresReconnection) {
+    folderOffer = { path: restored.path, reconnect: true };
+  } else {
+    const recent = await persistence.getMostRecentConnection();
+    if (epoch !== tabEpoch) return;
+    folderOffer = recent ? { path: recent.path, handle: recent.handle } : null;
+  }
+  updateConnectionBanner();
+  renderTasks();
+}
+
+async function openFolder(directoryHandle, path, origin) {
+  const store = new window.DrawbridgeAnnotationStore.AnnotationStore();
+  store.initialize(directoryHandle);
+  annotationStore = store;
+  isConnected = true;
+  projectPath = path;
+  folderOffer = null;
+  updateConnectionBanner();
+  if (!installedOrigins.has(origin)) {
+    installedOrigins.add(origin);
+    await window.DrawbridgeProjectSetup.installProjectFiles(directoryHandle);
+  }
+  await requestTasks();
+}
+
+async function connectFolder(directoryHandle, path) {
+  const origin = panelOrigin;
+  if (!await window.moatPersistence.persistProjectConnection(directoryHandle, path, origin)) {
+    console.warn('Drawbridge: Could not remember the project connection');
+  }
+  await openFolder(directoryHandle, path, origin);
+  showNotification('Project connected', 'success');
+}
+
+async function chooseFolder() {
+  if (!panelOrigin) {
+    showNotification('Open a website before connecting a project', 'error');
+    return;
+  }
+  try {
+    const directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite', startIn: 'documents' });
+    await connectFolder(directoryHandle, directoryHandle.name);
+  } catch (error) {
+    if (error.name === 'AbortError') showNotification('Project connection cancelled', 'info');
+    else showNotification(`Could not connect project: ${error.message}`, 'error');
+  }
+}
+
+async function acceptFolderOffer() {
+  const offer = folderOffer;
+  if (!offer || !panelOrigin) return;
+  try {
+    if (offer.reconnect) {
+      const restored = await window.moatPersistence.restoreProjectConnection({
+        origin: panelOrigin, allowPermissionPrompt: true
+      });
+      if (!restored.success) throw new Error(restored.reason);
+      await openFolder(restored.directoryHandle, restored.path, panelOrigin);
+      showNotification('Project connected', 'success');
+      return;
+    }
+    if (!await window.moatPersistence.verifyPermission(offer.handle) &&
+        !await window.moatPersistence.requestPermission(offer.handle)) {
+      throw new Error('Permission denied');
+    }
+    await connectFolder(offer.handle, offer.path);
+  } catch (error) {
+    showNotification(`Could not connect project: ${error.message}`, 'error');
+  }
 }
 
 // Event Listeners
@@ -91,23 +198,9 @@ function setupEventListeners() {
     });
   });
 
-  // Connect button
-  connectBtn.addEventListener('click', async () => {
-    // Try to reconnect if content script wasn't ready
-    if (!contentScriptReady) {
-      const ready = await connectWithRetry(3);
-      if (!ready) {
-        showNotification('Please refresh the page to connect', 'error');
-        return;
-      }
-    }
-
-    const result = await sendToContentScript({ type: 'SETUP_PROJECT' }, false);
-    if (!result) {
-      showNotification('Please refresh the page to connect', 'error');
-    }
-    // PROJECT_CONNECTED message will update the UI on success
-  });
+  // Connect buttons
+  connectBtn.addEventListener('click', chooseFolder);
+  reuseBtn.addEventListener('click', acceptFolderOffer);
 
   // Project button (opens dropdown)
   projectBtn.addEventListener('click', (e) => {
@@ -122,26 +215,13 @@ function setupEventListeners() {
       hideProjectMenu();
 
       if (action === 'disconnect') {
-        // Get current tab's origin to set disconnect flag
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tab?.url) {
-          try {
-            const origin = new URL(tab.url).origin;
-            // Set disconnect flag in chrome.storage.local - this works even if content script is unreachable
-            await chrome.storage.local.set({ [`drawbridge:disconnected:${origin}`]: true });
-          } catch (e) {
-            console.warn('Could not set disconnect flag:', e);
-          }
-        }
-
-        // Try to notify content script (best effort)
-        sendToContentScript({ type: 'DISCONNECT_PROJECT' }, false);
-
-        // Update UI immediately
+        await window.moatPersistence.removeProjectConnection(panelOrigin);
+        annotationStore = null;
         isConnected = false;
         projectPath = '';
         tasks = [];
         thumbnailCache.clear();
+        await restoreFolder(tabEpoch);
         updateConnectionBanner();
         renderTasks();
         updateBadges();
@@ -150,9 +230,9 @@ function setupEventListeners() {
         showNotification('Refreshing data...', 'info');
         requestTasks();
       } else if (action === 'clear-screenshots') {
-        // First get screenshot count
-        const countResult = await sendToContentScript({ type: 'GET_SCREENSHOT_COUNT' }, false);
-        const count = countResult?.count || 0;
+        const store = annotationStore;
+        if (!store) return;
+        const count = (await store.loadTasksFromFile()).filter(task => task.screenshotPath).length;
 
         if (count === 0) {
           showNotification('No screenshots to clear', 'info');
@@ -160,11 +240,12 @@ function setupEventListeners() {
         }
 
         if (confirm(`Clear ${count} screenshot${count !== 1 ? 's' : ''}? This cannot be undone.`)) {
-          const result = await sendToContentScript({ type: 'CLEAR_SCREENSHOTS' }, false);
-          if (result?.success) {
+          try {
+            await store.clearScreenshots();
             showNotification(`${count} screenshot${count !== 1 ? 's' : ''} cleared`, 'success');
+            thumbnailCache.clear();
             requestTasks();
-          } else {
+          } catch {
             showNotification('Failed to clear screenshots', 'error');
           }
         }
@@ -244,39 +325,19 @@ async function requestScreenCapture() {
 
 // Message Handling
 function handleMessage(message, sender, sendResponse) {
+  if (message.type === 'CLOSE_SIDE_PANEL') {
+    if (!sender.tab && message.windowId === panelWindowId) window.close();
+    return false;
+  }
+  if (message.type === 'SAVE_ANNOTATION' || message.type === 'LIST_ANNOTATIONS') {
+    if (!isFromActiveTab(sender)) return false;
+    handlePageRequest(message).then(sendResponse);
+    return true;
+  }
   if (message.sourceTabId !== activeTabId || message.sourceWindowId !== panelWindowId) return false;
   console.log('[SidePanel] Received message:', message.type);
 
   switch (message.type) {
-    case 'TASKS_LOADED':
-      tasks = message.tasks || [];
-      renderTasks();
-      updateBadges();
-      break;
-
-    case 'PROJECT_CONNECTED':
-      isConnected = true;
-      projectPath = message.path || '';
-      updateConnectionBanner();
-      showNotification('Project connected', 'success');
-      requestTasks();
-      break;
-
-    case 'PROJECT_DISCONNECTED':
-      isConnected = false;
-      projectPath = '';
-      tasks = [];
-      updateConnectionBanner();
-      renderTasks();
-      updateBadges();
-      showNotification('Project disconnected', 'info');
-      break;
-
-    case 'ANNOTATION_CREATED':
-      showNotification('Annotation saved', 'success');
-      requestTasks();
-      break;
-
     case 'SHOW_NOTIFICATION':
       if (typeof message.message === 'string' && message.message.trim()) {
         const type = ['info', 'success', 'warning', 'error'].includes(message.notificationType)
@@ -292,26 +353,33 @@ function handleMessage(message, sender, sendResponse) {
         showNotification(`${message.mode === 'comment' ? 'Comment' : 'Rectangle'} mode active - click on page`, 'info');
       }
       break;
-
-    case 'CONNECTION_STATUS':
-      isConnected = message.status === 'connected';
-      projectPath = message.path || '';
-      updateConnectionBanner();
-      if (isConnected) {
-        requestTasks();
-      }
-      break;
-
-    case 'TASK_UPDATED':
-      requestTasks();
-      break;
-
-    case 'TASK_DELETED':
-      requestTasks();
-      break;
   }
 
   return true;
+}
+
+// Saves only come from the top frame of the tab and site this panel is showing.
+function isFromActiveTab(sender) {
+  return sender.id === chrome.runtime.id && sender.tab?.id === activeTabId &&
+    sender.tab.windowId === panelWindowId && (sender.frameId ?? 0) === 0 &&
+    !!panelOrigin && tabOrigin(sender.tab.url) === panelOrigin;
+}
+
+async function handlePageRequest(message) {
+  const folderName = message.annotation?.folderName;
+  const store = annotationStore;
+  if (!store) return { success: false, error: 'Connect a project in the Drawbridge side panel.', folderName };
+  try {
+    if (message.type === 'LIST_ANNOTATIONS') {
+      return { success: true, tasks: await store.loadTasksFromFile() };
+    }
+    const saved = await store.saveAnnotation(message.annotation, message.taskData);
+    showNotification('Annotation saved', 'success');
+    requestTasks();
+    return { success: true, folderName: saved.folderName };
+  } catch (error) {
+    return { success: false, error: error.message, folderName: message.annotation?.folderName };
+  }
 }
 
 // Communication with Content Script
@@ -430,54 +498,18 @@ function updatePageStatus() {
   // This provides a better UX than showing disabled buttons
 }
 
-async function checkConnectionStatus() {
-  const epoch = tabEpoch;
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (epoch !== tabEpoch) return;
-    if (!tab?.id) {
-      // No active tab
-      isConnected = false;
-      projectPath = '';
-      updateConnectionBanner();
-      return;
-    }
-
-    // Check if this is a restricted page
-    const restrictedSchemes = ['chrome://', 'chrome-extension://', 'edge://', 'about:', 'devtools://'];
-    if (tab.url && restrictedSchemes.some(scheme => tab.url.startsWith(scheme))) {
-      isConnected = false;
-      projectPath = '';
-      updateConnectionBanner();
-      return;
-    }
-
-    // Don't show error for status check - content script might just need page refresh
-    const response = await sendToContentScript({ type: 'GET_CONNECTION_STATUS' }, false);
-    if (epoch !== tabEpoch) return;
-    if (response) {
-      isConnected = response.connected;
-      projectPath = response.path || '';
-      updateConnectionBanner();
-      if (isConnected) {
-        requestTasks();
-      }
-    } else {
-      // Content script not ready
-      isConnected = false;
-      projectPath = '';
-      updateConnectionBanner();
-    }
-  } catch (error) {
-    console.error('[SidePanel] Error checking status:', error);
-    isConnected = false;
-    updateConnectionBanner();
-  }
-}
-
 async function requestTasks() {
-  const response = await sendToContentScript({ type: 'LOAD_TASKS' }, false);
-  // Tasks will be received via TASKS_LOADED message from content script
+  const store = annotationStore;
+  if (!store) return;
+  try {
+    const loaded = await store.loadTasksFromFile();
+    if (store !== annotationStore) return;
+    tasks = loaded;
+    renderTasks();
+    updateBadges();
+  } catch (error) {
+    if (store === annotationStore) showNotification(`Could not load tasks: ${error.message}`, 'error');
+  }
 }
 
 // UI Updates
@@ -490,6 +522,12 @@ function updateConnectionBanner() {
     connectionBanner.classList.remove('connected');
     connectionBanner.classList.add('disconnected');
   }
+  const offer = !isConnected ? folderOffer : null;
+  reuseBtn.style.display = offer ? 'block' : 'none';
+  reuseBtn.textContent = offer ? `${offer.reconnect ? 'Reconnect' : 'Use'} ${offer.path}` : '';
+  reuseBtn.title = reuseBtn.textContent;
+  connectBtn.textContent = offer ? 'Choose folder' : 'Connect Project';
+  connectBtn.classList.toggle('connect-btn-secondary', !!offer);
 }
 
 function setActiveTab(status) {
@@ -534,7 +572,7 @@ function renderTasks() {
           <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
         </svg>
         <p>Connect a project to get started</p>
-        <p class="hint">Click "Connect Project" to select a folder</p>
+        <p class="hint">${folderOffer ? 'Use the folder above, or choose another' : 'Click "Connect Project" to select a folder'}</p>
       </div>
     `;
     return;
@@ -584,13 +622,13 @@ function addTaskEventListeners() {
     // Status dropdown
     const statusSelect = card.querySelector('.status-select');
     if (statusSelect) {
-      statusSelect.addEventListener('change', (e) => {
-        // Don't show error - TASK_UPDATED message will refresh the UI
-        sendToContentScript({
-          type: 'UPDATE_TASK_STATUS',
-          taskId,
-          status: e.target.value
-        }, false);
+      statusSelect.addEventListener('change', async (e) => {
+        try {
+          await annotationStore.updateTaskStatusAndSave(taskId, e.target.value);
+          await requestTasks();
+        } catch (error) {
+          showNotification(`Could not update task: ${error.message}`, 'error');
+        }
       });
     }
 
@@ -599,10 +637,13 @@ function addTaskEventListeners() {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         if (confirm('Delete this task and its saved files?')) {
-          const result = await sendToContentScript({ type: 'DELETE_TASK', taskId }, false);
-          if (!result?.success) {
-            const detail = result?.error || 'Please refresh the page and try again.';
-            showNotification(`Could not delete task: ${detail}`, 'error');
+          try {
+            if (!await annotationStore?.removeTaskAndSave(taskId)) {
+              throw new Error('Task not found. Refresh and try again.');
+            }
+            await requestTasks();
+          } catch (error) {
+            showNotification(`Could not delete task: ${error.message}`, 'error');
           }
         }
       });
@@ -612,42 +653,34 @@ function addTaskEventListeners() {
 
 // Load thumbnails for tasks with screenshots
 async function loadThumbnails() {
-  const epoch = tabEpoch;
+  const store = annotationStore;
   const thumbnailContainers = taskContainer.querySelectorAll('.thumbnail-container');
 
   for (const container of thumbnailContainers) {
     const screenshotPath = container.dataset.screenshotPath;
-    const taskId = container.dataset.taskId;
-
     if (!screenshotPath) continue;
 
-    // Check cache first
-    if (thumbnailCache.has(screenshotPath)) {
-      setThumbnailSrc(container, thumbnailCache.get(screenshotPath));
-      continue;
-    }
-
-    // Request thumbnail from content script
-    try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (epoch !== tabEpoch || tab?.id !== activeTabId) return;
-      if (tab?.id) {
-        chrome.tabs.sendMessage(tab.id, {
-          type: 'GET_THUMBNAIL',
-          screenshotPath,
-          taskId
-        }, (response) => {
-          if (epoch !== tabEpoch) return;
-          if (response?.success && response.dataUrl) {
-            thumbnailCache.set(screenshotPath, response.dataUrl);
-            setThumbnailSrc(container, response.dataUrl);
-          }
-        });
+    if (!thumbnailCache.has(screenshotPath)) {
+      try {
+        const dataUrl = await readDataUrl(await store.getImageFile(screenshotPath));
+        if (store !== annotationStore) return;
+        thumbnailCache.set(screenshotPath, dataUrl);
+      } catch (error) {
+        console.warn('Failed to load thumbnail:', error);
+        continue;
       }
-    } catch (error) {
-      console.warn('Failed to load thumbnail:', error);
     }
+    setThumbnailSrc(container, thumbnailCache.get(screenshotPath));
   }
+}
+
+function readDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 }
 
 function setThumbnailSrc(container, src) {
@@ -678,7 +711,7 @@ function renderTaskCard(task) {
   }
 
   return `
-    <div class="task-card status-${statusClass} ${isCompleted ? 'completed' : ''}" data-task-id="${task.id}">
+    <div class="task-card status-${escapeHtml(statusClass)} ${isCompleted ? 'completed' : ''}" data-task-id="${escapeHtml(task.id)}">
       <div class="task-layout">
         <div class="task-content-area">
           <div class="task-header">
@@ -693,7 +726,7 @@ function renderTaskCard(task) {
           ${task.selector ? `<div class="task-selector">${escapeHtml(task.selector)}</div>` : ''}
         </div>
         ${hasScreenshot ? `
-          <div class="thumbnail-container" data-task-id="${task.id}" data-screenshot-path="${task.screenshotPath}">
+          <div class="thumbnail-container" data-task-id="${escapeHtml(task.id)}" data-screenshot-path="${escapeHtml(task.screenshotPath)}">
             <img class="thumbnail-img" style="${thumbnailStyle} display: none;" alt="Screenshot" />
             <button type="button" class="thumbnail-delete-btn" title="Delete task and files" aria-label="Delete task and files">
               ${trashIcon}
@@ -721,9 +754,8 @@ function formatTime(timestamp) {
 }
 
 function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  return String(text).replace(/[&<>"']/g, character => entities[character]);
 }
 
 // Tools Menu

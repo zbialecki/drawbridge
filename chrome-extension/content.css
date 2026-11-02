@@ -177,6 +177,17 @@ body.float-drawing-mode * {
   display: none;
 }
 
+.float-comment-error {
+  margin-top: 8px;
+  color: #dc2626;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.float-comment-error:empty {
+  display: none;
+}
+
 .float-comment-thumb {
   position: relative;
   width: 56px;

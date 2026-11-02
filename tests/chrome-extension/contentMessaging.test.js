@@ -5,19 +5,17 @@ const { sourceSection } = require('../helpers/test-utils');
 const source = fs.readFileSync(require.resolve('../../chrome-extension/content_script.js'), 'utf8');
 
 function setup(chrome = {}) {
-  const task = { id: 'annotation-1', folderName: '26-11-01 15-42' };
-  const taskStore = { saveAnnotation: jest.fn(async () => task) };
   const context = vm.createContext({
-    chrome, taskStore,
+    chrome,
     window: { dispatchEvent: jest.fn(), devicePixelRatio: 2 },
     CustomEvent: class {},
     convertAnnotationToTask: annotation => annotation,
     showNotification: jest.fn(),
     console: { warn: jest.fn(), error: jest.fn() }
   });
-  vm.runInContext(sourceSection(source, '  function relayToSidePanel(', '  // Load tasks for side panel'), context);
-  vm.runInContext(sourceSection(source, '  async function captureScreenshotNative(', '  // Initialize when page loads'), context);
-  return { context, taskStore };
+  vm.runInContext(sourceSection(source, '  function relayToSidePanel(', '  // Earlier versions kept the folder handle'), context);
+  vm.runInContext(sourceSection(source, '  async function captureScreenshotNative(', '  // Show notifications in the native side panel'), context);
+  return { context };
 }
 
 const area = { x: 10, y: 20, width: 30, height: 40 };
@@ -36,18 +34,36 @@ test('page notifications are sent to the side panel without creating page UI', (
   expect(context.document.createElement).not.toHaveBeenCalled();
 });
 
-test('extension initialization does not show the old comment prompt', async () => {
+test('removes the folder handle and keys that earlier versions left in the site\'s storage', () => {
+  const removed = [];
+  const deleted = [];
   const context = vm.createContext({
-    initializeUtilities: async () => true,
-    initializeProject: async () => {}, initializeUI: jest.fn(),
-    showNotification: jest.fn(), setTimeout: jest.fn(),
-    console: { log() {}, error() {} }
+    indexedDB: { deleteDatabase: name => deleted.push(name) },
+    localStorage: { removeItem: key => removed.push(key) },
+    location: { origin: 'https://example.com' }
   });
-  vm.runInContext(sourceSection(source, '  // Initialize Moat extension on page load', '  // Initialize UI components'), context);
-  await context.initializeExtension();
-  expect(context.initializeUI).toHaveBeenCalledTimes(1);
-  expect(context.showNotification).not.toHaveBeenCalled();
-  expect(context.setTimeout).not.toHaveBeenCalled();
+  vm.runInContext(sourceSection(source, '  // Earlier versions kept the folder handle', '  // The native panel owns a port'), context);
+  expect(deleted).toEqual(['MoatPersistence']);
+  expect(removed).toEqual(['moat.project.https://example.com', 'moat.queue']);
+});
+
+test('blocked site storage does not stop the content script', () => {
+  const context = vm.createContext({ indexedDB: { deleteDatabase() { throw new Error('SecurityError'); } } });
+  expect(() => vm.runInContext(sourceSection(source, '  // Earlier versions kept the folder handle', '  // The native panel owns a port'), context)).not.toThrow();
+});
+
+test('native panel connections enable shortcuts only while connected', () => {
+  let connect;
+  let disconnect;
+  const context = vm.createContext({ sidePanelConnections: 0, Math,
+    chrome: { runtime: { onConnect: { addListener(fn) { connect = fn; } } } } });
+  vm.runInContext(sourceSection(source, '  chrome.runtime.onConnect.addListener(', '  window.__drawbridgeDebug ='), context);
+  connect({ name: 'unrelated' });
+  expect(context.sidePanelConnections).toBe(0);
+  connect({ name: 'drawbridge-sidepanel', onDisconnect: { addListener(fn) { disconnect = fn; } } });
+  expect(context.sidePanelConnections).toBe(1);
+  disconnect();
+  expect(context.sidePanelConnections).toBe(0);
 });
 
 test('a save failure appears in the sidebar and leaves the page untouched', async () => {
@@ -71,7 +87,7 @@ test('a save failure appears in the sidebar and leaves the page untouched', asyn
       addToQueue: jest.fn(async () => { throw new Error('Permission denied'); }),
       console: { error() {} }
     });
-    vm.runInContext(sourceSection(source, '  function relayToSidePanel(', '  // Load tasks for side panel'), context);
+    vm.runInContext(sourceSection(source, '  function relayToSidePanel(', '  // Earlier versions kept the folder handle'), context);
     vm.runInContext(sourceSection(source, '  // Show notification', '  // Add annotation to queue'), context);
     vm.runInContext(sourceSection(source, '  async function submitCommentAnnotation(', '  // Wire clipboard-image paste'), context);
     const button = { disabled: false };
@@ -95,39 +111,6 @@ test('a missing extension runtime does not throw or reject when relaying an anno
 test('a context-invalidation error does not escape the panel relay', async () => {
   const { context } = setup({ runtime: { sendMessage() { throw new Error('Extension context invalidated.'); } } });
   await expect(Promise.resolve().then(() => context.relayToSidePanel({ type: 'TASK_UPDATED' }))).resolves.toBeUndefined();
-});
-
-test('successful storage is not reported as failed when the runtime disappears', async () => {
-  const { context, taskStore } = setup();
-  await expect(context.saveAnnotationWithNewSystem({ id: 'annotation-1' })).resolves.toBe(true);
-  expect(taskStore.saveAnnotation).toHaveBeenCalledTimes(1);
-  expect(context.showNotification).not.toHaveBeenCalled();
-});
-
-test('saving does not wake stale page listeners from an invalidated extension context', async () => {
-  const errors = [];
-  const virtualConsole = new VirtualConsole();
-  virtualConsole.on('jsdomError', error => errors.push(error));
-  const dom = new JSDOM('', { virtualConsole });
-  try {
-    const staleListener = jest.fn(() => {
-      const oldChrome = {};
-      oldChrome.runtime.sendMessage({ type: 'RELAY_TO_SIDEPANEL' });
-    });
-    dom.window.addEventListener('moat:tasks-updated', staleListener);
-    const sendMessage = jest.fn(async () => {});
-    const { context, taskStore } = setup({ runtime: { sendMessage } });
-    context.window = dom.window;
-    context.CustomEvent = dom.window.CustomEvent;
-    await expect(context.saveAnnotationWithNewSystem({ id: 'annotation-1' })).resolves.toBe(true);
-    expect(taskStore.saveAnnotation).toHaveBeenCalledTimes(1);
-    expect(staleListener).not.toHaveBeenCalled();
-    expect(errors).toHaveLength(0);
-    expect(sendMessage).toHaveBeenCalledWith({ type: 'RELAY_TO_SIDEPANEL',
-      payload: { type: 'ANNOTATION_CREATED', taskId: 'annotation-1' } });
-  } finally {
-    dom.window.close();
-  }
 });
 
 test('a closed side panel is still handled as a rejected message, without an unhandled rejection', async () => {
@@ -187,3 +170,35 @@ test('native capture and high-DPI cropping still work with a valid runtime', asy
   expect(drawImage).toHaveBeenCalledWith(expect.any(Object), 20, 40, 60, 80, 0, 0, 60, 80);
   expect(result).toEqual({ dataUrl: 'data:image/png;base64,cropped', viewport: { ...area, padding: 100 } });
 });
+
+describe('captureFrameworkContext', () => {
+  const load = runtime => {
+    const context = vm.createContext({ setTimeout, clearTimeout, Promise, Math, Date });
+    context.globalThis = context;
+    context.chrome = { runtime };
+    vm.runInContext(sourceSection(source, '  // Read React and Next.js details', '  // Show notifications in the native side panel'), context);
+    return context;
+  };
+
+  test('marks the element for the page reader, then removes the marker', async () => {
+    const { window } = new JSDOM('<button>Save</button>');
+    const button = window.document.querySelector('button');
+    let marker;
+    const context = load({ sendMessage: (message, callback) => {
+      marker = message.marker;
+      expect(button.getAttribute('data-drawbridge-inspect')).toBe(marker);
+      callback({ react: { component: 'Save' } });
+    } });
+    await expect(context.captureFrameworkContext(button)).resolves.toEqual({ react: { component: 'Save' } });
+    expect(marker).toEqual(expect.any(String));
+    expect(button.hasAttribute('data-drawbridge-inspect')).toBe(false);
+  });
+
+  test.each([
+    ['a runtime error', { lastError: { message: 'gone' }, sendMessage: (message, callback) => callback(undefined) }],
+    ['a reloaded extension', { sendMessage: () => { throw new Error('Extension context invalidated'); } }]
+  ])('resolves with null after %s', async (name, runtime) => {
+    await expect(load(runtime).captureFrameworkContext()).resolves.toBeNull();
+  });
+});
+

@@ -12,6 +12,7 @@ It is built for browser-to-code feedback loops with Cursor, Claude Code, Codex, 
 - Draw freeform rectangles for layout, spacing, and visual bugs that are not tied to a single DOM node.
 - Capture selector data, element context, bounding boxes, and screenshots with each note.
 - Sync tasks into your project as readable markdown and structured JSON.
+- On React and Next.js development builds, record the component, its source file and line, the server/client boundary, and the route files.
 - Track task status through `to do`, `doing`, and `done`.
 - Deploy the `/bridge` workflow for Claude Code, Codex, and Windsurf.
 - Recover cleanly after extension reloads: the toolbar icon can inject missing scripts into existing tabs and toggles the existing drawer instead of stacking duplicates.
@@ -41,6 +42,8 @@ For local `file://` pages, open the Drawbridge extension details in Chrome and e
 
 Drawbridge saves each annotation in its own timestamped subfolder directly inside the selected folder.
 
+Each site connects separately, so feedback can't land in the wrong project. When you open another site, such as staging after localhost, the drawer offers the folder you last used in one click. Your folder access stays inside the extension, where the websites you annotate can't reach it, and the drawer needs to be open while you save.
+
 ### 3. Process The Queue
 
 After adding annotations, open your project in Cursor, Claude Code, Codex, or Windsurf and run `/bridge` or `bridge`.
@@ -51,7 +54,7 @@ After adding annotations, open your project in Cursor, Claude Code, Codex, or Wi
 - Press `R`, or use + Add -> Rectangle, then drag over an area and leave a note.
 - Press `S`, or use + Add -> Screen, to capture the visible viewport and describe it.
 - Press `Esc` to exit an annotation mode.
-- Click the Drawbridge toolbar icon to open or close the drawer.
+- Click the Drawbridge toolbar icon, or press `Control+Shift+D` on Mac or `Alt+Shift+D` on Windows and Linux, to open or close the drawer. Change the shortcut at `chrome://extensions/shortcuts`.
 
 Tasks appear in the drawer and sync to your connected project.
 
@@ -60,6 +63,35 @@ Comment and Rectangle use Chrome's native screenshot capture, cropped around the
 ![Drawbridge comment annotation](https://github.com/breschio/drawbridge-media/blob/main/drawbridge-comment-2.gif?raw=true)
 
 ![Drawbridge rectangle annotation](https://github.com/breschio/drawbridge-media/raw/main/drawbridge-rectangle.gif)
+
+## React And Next.js
+
+On a development build, Comment annotations save the selected component and where it lives in your code:
+
+```json
+"react": {
+  "component": "PrimaryButton",
+  "componentEnv": "client",
+  "owners": ["SaveButton", "BillingCard", "SettingsPage"],
+  "source": "app/settings/SaveButton.js:4:10",
+  "serverComponents": ["BillingCard", "SettingsPage", "RootLayout"],
+  "clientBoundary": { "component": "SaveButton", "renderedBy": "BillingCard" },
+  "route": "app/settings/page.js",
+  "layouts": ["app/layout.js"]
+}
+```
+
+Source files, the server/client details, and route files need Next.js. Other React apps get the component names only. Rectangle and Screen annotations on Next.js save the route files, since they aren't tied to one element. Route files need Next.js 16 and the App Router.
+
+Every annotation on a Next.js page also saves a `framework` object with the Next.js version, router, mode, and build ID, including on production builds. Production builds minify component names, so Drawbridge records no component data there.
+
+To turn the build ID into a commit an agent can find, set it to your git SHA in `next.config.js`:
+
+```js
+generateBuildId: async () => process.env.GIT_COMMIT_SHA
+```
+
+Agents working from `/bridge` use Next.js's built-in MCP server (`/_next/mcp`, Next.js 16 and later) to check errors when a local dev server is running. For its full tool set, add [`next-devtools-mcp`](https://nextjs.org/docs/app/guides/mcp) to your agent's MCP configuration.
 
 ## Drawer Layout
 
@@ -128,6 +160,8 @@ For the optional clipboard watcher, run `node /path/to/drawbridge/scripts/drawbr
 - If the icon does nothing after reloading the extension, click it once on the page again. Drawbridge now injects missing scripts into existing tabs.
 - If the drawer looks stale, close and reopen it with the toolbar icon.
 - If project files are missing, reconnect the project from the drawer.
+- If saving says to open the side panel, open the drawer on that tab and submit again. Your comment stays in the editor.
+- After upgrading from an earlier version, connect your project once more. Earlier versions kept folder access in each site's storage, and Drawbridge removes it.
 - If an AI tool cannot find tasks, point it to the selected output folder and its timestamped subfolders containing `metadata.json` and `comment.md`.
 
 ## License

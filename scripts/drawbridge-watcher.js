@@ -51,8 +51,12 @@ function processAnnotations(root, copy = copyToClipboard) {
       `Annotation: ${directory}`,
       `Selector: ${metadata.selector || 'freeform rectangle'}`,
       `URL: ${metadata.pageUrl || ''}`,
+      metadata.react?.component && `Component: ${metadata.react.component}${metadata.react.componentEnv ? ` (${metadata.react.componentEnv})` : ''}`,
+      metadata.react?.source && `Source: ${metadata.react.source}`,
+      metadata.react?.route && `Route: ${metadata.react.route}`,
+      metadata.framework?.buildId && `Build: ${metadata.framework.buildId}`,
       'Read this folder’s metadata.json, comment.md, screenshot, and reference images before editing.'
-    ].join('\n');
+    ].filter(Boolean).join('\n');
     console.log(`\n📝 ${path.basename(directory)}\n${prompt}`);
     if (copy(prompt)) {
       // Keep watcher state beside the annotation, separate from agent-editable metadata.

@@ -1,5 +1,5 @@
 // Shared build id — keep DRAWBRIDGE_FEATURE_BUILD in sync across content + background
-const DRAWBRIDGE_FEATURE_BUILD = 'remove-moat-legacy-v2';
+const DRAWBRIDGE_FEATURE_BUILD = 'panel-owned-folder-v1';
 
 function getContentScriptBuild(manifestVersion) {
   return `${manifestVersion}-${DRAWBRIDGE_FEATURE_BUILD}`;

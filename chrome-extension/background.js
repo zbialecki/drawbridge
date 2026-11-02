@@ -1,6 +1,6 @@
 // chrome-extension/background.js
 
-importScripts('utils/buildInfo.js');
+importScripts('utils/buildInfo.js', 'utils/frameworkContext.js');
 
 const RESTRICTED_URL_PREFIXES = [
   'chrome://',
@@ -124,7 +124,11 @@ async function ensureContentScriptsReady(tabId) {
   }
 }
 
+// The toolbar icon and its keyboard shortcut both toggle the panel in this window.
 async function handleActionClick(tab) {
+  // An open panel closes itself. A panel opened by this click has not loaded yet, so it stays open.
+  chrome.runtime.sendMessage({ type: 'CLOSE_SIDE_PANEL', windowId: tab?.windowId }).catch(() => {});
+
   if (isRestrictedTab(tab)) {
     console.warn('Drawbridge: Cannot open on restricted page:', tab?.url);
     return;
@@ -158,6 +162,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       }
     );
+    return true; // Required for async sendResponse
+  }
+  if (message.type === 'CAPTURE_FRAMEWORK_CONTEXT' && sender.tab) {
+    const { inspectPageContext, sanitizeFrameworkContext } = globalThis.DrawbridgeFrameworkContext;
+    runScriptingMethod('executeScript', {
+      target: { tabId: sender.tab.id, frameIds: [sender.frameId ?? 0] },
+      world: 'MAIN',
+      func: inspectPageContext,
+      args: [message.marker ?? null]
+    }).then(
+      results => sendResponse(sanitizeFrameworkContext(results?.[0]?.result, sender.tab.url)),
+      error => {
+        console.warn('Drawbridge: Could not read framework context:', error.message);
+        sendResponse(null);
+      }
+    ).catch(() => sendResponse(null));
     return true; // Required for async sendResponse
   }
   if (message.type === 'RELAY_TO_SIDEPANEL' && sender.tab) {
