@@ -19,7 +19,6 @@ let panelOrigin = null;
 let annotationStore = null;
 // A folder this site can use in one click: its own after permission expired, or another site's.
 let folderOffer = null;
-const installedOrigins = new Set();
 let currentMode = null; // 'comment', 'drawing', 'screen', or null
 
 const trashIcon = `
@@ -29,7 +28,7 @@ const trashIcon = `
 `;
 
 // Thumbnail cache
-const thumbnailCache = new Map();
+let thumbnailCache = new Map();
 
 // DOM Elements
 const taskContainer = document.getElementById('task-container');
@@ -114,7 +113,7 @@ async function restoreFolder(epoch) {
   const restored = await persistence.restoreProjectConnection({ origin });
   if (epoch !== tabEpoch) return;
   if (restored.success) {
-    await openFolder(restored.directoryHandle, restored.path, origin);
+    await openFolder(restored.directoryHandle, restored.path, epoch);
     return;
   }
   if (restored.requiresReconnection) {
@@ -144,7 +143,8 @@ async function holdFolderAccess() {
   }
 }
 
-async function openFolder(directoryHandle, path, origin) {
+async function openFolder(directoryHandle, path, epoch) {
+  if (epoch !== tabEpoch) return;
   const store = new window.DrawbridgeAnnotationStore.AnnotationStore();
   store.initialize(directoryHandle);
   annotationStore = store;
@@ -153,31 +153,33 @@ async function openFolder(directoryHandle, path, origin) {
   folderOffer = null;
   updateConnectionBanner();
   holdFolderAccess();
-  if (!installedOrigins.has(origin)) {
-    installedOrigins.add(origin);
-    await window.DrawbridgeProjectSetup.installProjectFiles(directoryHandle);
-  }
   await requestTasks();
 }
 
-async function connectFolder(directoryHandle, path) {
-  const origin = panelOrigin;
+async function connectFolder(directoryHandle, path, origin, epoch) {
+  if (epoch !== tabEpoch) return;
   if (!await window.moatPersistence.persistProjectConnection(directoryHandle, path, origin)) {
     console.warn('Drawbridge: Could not remember the project connection');
   }
-  await openFolder(directoryHandle, path, origin);
-  showNotification('Project connected', 'success');
+  if (epoch !== tabEpoch) return;
+  await openFolder(directoryHandle, path, epoch);
+  if (epoch !== tabEpoch) return;
+  await window.DrawbridgeProjectSetup.installProjectFiles(directoryHandle);
+  if (epoch === tabEpoch) showNotification('Project connected', 'success');
 }
 
 async function chooseFolder() {
-  if (!panelOrigin) {
+  const origin = panelOrigin;
+  const epoch = tabEpoch;
+  if (!origin) {
     showNotification('Open a website before connecting a project', 'error');
     return;
   }
   try {
     const directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite', startIn: 'documents' });
-    await connectFolder(directoryHandle, directoryHandle.name);
+    await connectFolder(directoryHandle, directoryHandle.name, origin, epoch);
   } catch (error) {
+    if (epoch !== tabEpoch) return;
     if (error.name === 'AbortError') showNotification('Project connection cancelled', 'info');
     else showNotification(`Could not connect project: ${error.message}`, 'error');
   }
@@ -185,24 +187,24 @@ async function chooseFolder() {
 
 async function acceptFolderOffer() {
   const offer = folderOffer;
-  if (!offer || !panelOrigin) return;
+  const origin = panelOrigin;
+  const epoch = tabEpoch;
+  if (!offer || !origin) return;
   try {
     if (offer.reconnect) {
-      const restored = await window.moatPersistence.restoreProjectConnection({
-        origin: panelOrigin, allowPermissionPrompt: true
-      });
+      const restored = await window.moatPersistence.restoreProjectConnection({ origin, allowPermissionPrompt: true });
+      if (epoch !== tabEpoch) return;
       if (!restored.success) throw new Error(restored.reason);
-      await openFolder(restored.directoryHandle, restored.path, panelOrigin);
-      showNotification('Project connected', 'success');
+      await openFolder(restored.directoryHandle, restored.path, epoch);
+      if (epoch === tabEpoch) showNotification('Project connected', 'success');
       return;
     }
-    if (!await window.moatPersistence.verifyPermission(offer.handle) &&
-        !await window.moatPersistence.requestPermission(offer.handle)) {
-      throw new Error('Permission denied');
-    }
-    await connectFolder(offer.handle, offer.path);
+    const granted = await window.moatPersistence.verifyPermission(offer.handle);
+    if (epoch !== tabEpoch) return;
+    if (!granted && !await window.moatPersistence.requestPermission(offer.handle)) throw new Error('Permission denied');
+    await connectFolder(offer.handle, offer.path, origin, epoch);
   } catch (error) {
-    showNotification(`Could not connect project: ${error.message}`, 'error');
+    if (epoch === tabEpoch) showNotification(`Could not connect project: ${error.message}`, 'error');
   }
 }
 
@@ -234,8 +236,10 @@ function setupEventListeners() {
       hideProjectMenu();
 
       if (action === 'disconnect') {
+        const epoch = tabEpoch;
         await window.moatPersistence.removeProjectConnection(panelOrigin);
         holdFolderAccess();
+        if (epoch !== tabEpoch) return;
         annotationStore = null;
         isConnected = false;
         projectPath = '';
@@ -293,7 +297,7 @@ function setupEventListeners() {
     if (e.key.toLowerCase() !== 's' || e.ctrlKey || e.metaKey || e.altKey ||
         e.repeat || e.isComposing || e.keyCode === 229 || document.hidden ||
         e.target?.matches?.('input, textarea, select') || e.target?.isContentEditable ||
-        e.target?.closest?.('[contenteditable], [role="textbox"]')) return;
+        e.target?.closest?.('[role="textbox"]')) return;
     e.preventDefault();
     hideToolsMenu();
     requestScreenCapture();
@@ -505,6 +509,7 @@ async function requestTasks() {
     const loaded = await store.loadTasksFromFile();
     if (store !== annotationStore) return;
     tasks = loaded;
+    thumbnailCache = new Map();
     renderTasks();
     updateBadges();
   } catch (error) {
@@ -657,23 +662,24 @@ function addTaskEventListeners() {
 // Load thumbnails for tasks with screenshots
 async function loadThumbnails() {
   const store = annotationStore;
+  const cache = thumbnailCache;
   const thumbnailContainers = taskContainer.querySelectorAll('.thumbnail-container');
 
   for (const container of thumbnailContainers) {
     const screenshotPath = container.dataset.screenshotPath;
     if (!screenshotPath) continue;
 
-    if (!thumbnailCache.has(screenshotPath)) {
+    if (!cache.has(screenshotPath)) {
       try {
         const dataUrl = await readDataUrl(await store.getImageFile(screenshotPath));
-        if (store !== annotationStore) return;
-        thumbnailCache.set(screenshotPath, dataUrl);
+        if (store !== annotationStore || cache !== thumbnailCache) return;
+        cache.set(screenshotPath, dataUrl);
       } catch (error) {
         console.warn('Failed to load thumbnail:', error);
         continue;
       }
     }
-    setThumbnailSrc(container, thumbnailCache.get(screenshotPath));
+    setThumbnailSrc(container, cache.get(screenshotPath));
   }
 }
 

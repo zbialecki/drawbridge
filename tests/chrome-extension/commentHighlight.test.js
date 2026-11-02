@@ -49,22 +49,26 @@ test('dismissing a comment removes the highlight even after another page click',
   }
 });
 
-test('cancelling during screenshot capture does not reopen the comment editor', async () => {
-  const dom = new JSDOM('<button>Example</button>', { url: 'https://example.com/' });
+test.each([
+  ['comment', 'cancel'], ['comment', 'tab switch'], ['rectangle', 'tab switch']
+])('%s capture cannot reopen its editor after a %s', async (mode, action) => {
+  const dom = new JSDOM('<button>Example</button>', { url: 'https://example.com/', pretendToBeVisual: true });
   try {
     const { window } = dom;
     const element = window.document.querySelector('button');
     const overlay = window.document.createElement('div');
-    overlay.className = 'float-hover-overlay';
+    overlay.className = mode === 'comment' ? 'float-hover-overlay' : 'float-drawing-canvas';
     window.document.body.appendChild(overlay);
     const capture = deferred();
     const started = deferred();
     const context = vm.createContext({
-      window, document: window.document, commentMode: true, commentBox: null,
+      window, document: window.document, commentMode: mode === 'comment', commentBox: null,
       screenBackdrop: null, screenCapturePending: false, annotationCapturePending: false,
+      drawingCtx: null, drawingCanvas: mode === 'rectangle' ? overlay : null, drawingTool: null,
+      removeDrawingHandlers: jest.fn(), updateCanvasSize: jest.fn(),
       commentCaptureVersion: 0, hoverOverlay: overlay, highlightedElement: element,
       deepSelectIndex: 0, pickStack: [], lastTopPickElement: null,
-      setDeepSelectActive: jest.fn(),
+      setDeepSelectActive: jest.fn(), setControlKeyHeld: jest.fn(),
       captureFrameworkContext: async () => null,
       captureScreenshotNative: () => { started.resolve(); return capture.promise; },
       enablePasteImages: box => { box.pastedImages = []; },
@@ -74,13 +78,23 @@ test('cancelling during screenshot capture does not reopen the comment editor', 
     vm.runInContext(sourceSection(source, '  // Create comment input box', '  // Remove comment box'), context);
     vm.runInContext(sourceSection(source, '  // Remove comment box', '  // Create canvas overlay for drawing'), context);
     vm.runInContext(sourceSection(source, '  // Highlight element on hover with DOM overlay', '  // Export annotations'), context);
-    const opening = context.createCommentBox(element, 20, 20);
+    vm.runInContext(sourceSection(source, '  // Create comment box for freeform rectangle', '  // Global hover overlay element'), context);
+    vm.runInContext(sourceSection(source, '  // Remove canvas overlay', '  // Enter drawing mode'), context);
+    vm.runInContext(sourceSection(source, "  window.addEventListener('blur'", '  function setDeepSelectActive('), context);
+    const opening = mode === 'comment' ? context.createCommentBox(element, 20, 20)
+      : context.createFreeformCommentBox({ x: 20, y: 20, width: 40, height: 40 }, 20, 20);
     await started.promise;
-    context.exitCommentMode();
-    capture.resolve(null);
+    if (action === 'cancel') context.exitCommentMode();
+    else {
+      Object.defineProperty(window.document, 'visibilityState', { configurable: true, value: 'hidden' });
+      window.document.dispatchEvent(new window.Event('visibilitychange'));
+      Object.defineProperty(window.document, 'visibilityState', { configurable: true, value: 'visible' });
+    }
+    capture.resolve({ dataUrl: 'data:image/png;base64,eA==', viewport: {} });
     await opening;
     expect(window.document.querySelector('.float-comment-box')).toBeNull();
-    expect(window.document.querySelector('.float-hover-overlay')).toBeNull();
+    if (action === 'cancel') expect(window.document.querySelector('.float-hover-overlay')).toBeNull();
+    expect(window.document.querySelector('.float-drawing-canvas')).toBeNull();
     expect(context.annotationCapturePending).toBe(false);
   } finally {
     dom.window.close();

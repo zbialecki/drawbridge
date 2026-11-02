@@ -1,5 +1,6 @@
 {
   "manifest_version": 3,
+  "minimum_chrome_version": "121",
   "name": "Drawbridge",
   "version": "2.0.0",
   "description": "Send comments and screenshots directly to Cursor and Claude Code as prompts.",

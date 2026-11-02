@@ -50,11 +50,11 @@ The panel must be open to save. The content script sends `SAVE_ANNOTATION` to th
 
 Task data can come from files that agents and other tools edit, so the panel escapes every value it renders, including attributes.
 
-Connecting a site installs `/bridge` prompts, once per panel session, under `.claude/commands/`, `.windsurf/workflows/`, and `.codex/prompts/` in the selected folder. Only those tool directories are added to an existing `.gitignore`; annotation folders are not automatically ignored. A separate output folder may be outside the code project, so the user must point their AI tool to it.
+Explicitly connecting a folder creates missing `/bridge` prompts under `.claude/commands/`, `.windsurf/workflows/`, and `.codex/prompts/`. Existing commands, including empty files, are preserved. Routine restoration does not write project files, and connecting a different folder installs its missing prompts independently. Only those tool directories are added to an existing `.gitignore`; annotation folders are not automatically ignored. A separate output folder may be outside the code project, so the user must point their AI tool to it.
 
 ## Native Screenshot Capture
 
-Both element (`C`) and rectangle (`R`) annotations send `CAPTURE_SCREENSHOT` to the service worker. Chrome's `captureVisibleTab` returns a viewport PNG without a DOM-rendering library. The content script crops it with viewport-relative coordinates, 100 CSS pixels of padding, and `devicePixelRatio` scaling. Visible annotation overlays are part of the captured image.
+All annotation modes send `CAPTURE_SCREENSHOT` to the service worker, which checks the requesting tab is active before and after capture. Captures are discarded if the page becomes hidden, including a switch away and back. Chrome's `captureVisibleTab` returns a viewport PNG without a DOM-rendering library. The content script crops it with viewport-relative coordinates, 100 CSS pixels of padding, and `devicePixelRatio` scaling. Visible annotation overlays are part of the captured image.
 
 ## React and Next.js Context
 

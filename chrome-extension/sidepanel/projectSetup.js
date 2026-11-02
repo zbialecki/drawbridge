@@ -31,10 +31,33 @@ async function deployBridgeCommand(directory) {
       for (const segment of pathSegments) {
         target = await target.getDirectoryHandle(segment, { create: true });
       }
+      try {
+        await target.getFileHandle('bridge.md');
+        continue; // Existing commands belong to the user, including empty files.
+      } catch (error) {
+        if (error.name !== 'NotFoundError') throw error;
+      }
       const fileHandle = await target.getFileHandle('bridge.md', { create: true });
-      const writable = await fileHandle.createWritable({ keepExistingData: false });
-      await writable.write(content);
-      await writable.close();
+      let writable;
+      try {
+        writable = await fileHandle.createWritable({ mode: 'exclusive', keepExistingData: false });
+        if ((await fileHandle.getFile()).size) {
+          await writable.abort();
+          continue;
+        }
+        await writable.write(content);
+        await writable.close();
+      } catch (error) {
+        await writable?.abort().catch(() => {});
+        if (writable || error.name !== 'NoModificationAllowedError') {
+          try {
+            if ((await fileHandle.getFile()).size === 0) await target.removeEntry('bridge.md');
+          } catch (cleanupError) {
+            console.warn('Drawbridge: Could not remove an unfinished bridge.md:', cleanupError.message);
+          }
+        }
+        throw error;
+      }
     } catch (error) {
       console.warn(`Drawbridge: Could not install bridge.md in ${pathSegments.join('/')}:`, error.message);
     }

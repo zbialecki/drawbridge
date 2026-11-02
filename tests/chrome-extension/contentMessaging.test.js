@@ -8,6 +8,7 @@ function setup(chrome = {}) {
   const context = vm.createContext({
     chrome,
     window: { dispatchEvent: jest.fn(), devicePixelRatio: 2 },
+    document: { hidden: false, addEventListener: jest.fn(), removeEventListener: jest.fn() },
     CustomEvent: class {},
     convertAnnotationToTask: annotation => annotation,
     showNotification: jest.fn(),
@@ -160,7 +161,7 @@ test('native capture and high-DPI cropping still work with a valid runtime', asy
   const { context } = setup({ runtime: { sendMessage } });
   const drawImage = jest.fn();
   const canvas = { getContext: () => ({ drawImage }), toDataURL: () => 'data:image/png;base64,cropped' };
-  context.document = { createElement: () => canvas };
+  context.document.createElement = () => canvas;
   context.Image = class {
     constructor() { this.width = 1600; this.height = 1000; }
     set src(value) { this.onload(); }
@@ -169,6 +170,25 @@ test('native capture and high-DPI cropping still work with a valid runtime', asy
   expect(sendMessage).toHaveBeenCalledWith({ type: 'CAPTURE_SCREENSHOT' }, expect.any(Function));
   expect(drawImage).toHaveBeenCalledWith(expect.any(Object), 20, 40, 60, 80, 0, 0, 60, 80);
   expect(result).toEqual({ dataUrl: 'data:image/png;base64,cropped', viewport: { ...area, padding: 100 } });
+});
+
+test('discards a native screenshot if the page became hidden, even if it is visible again', async () => {
+  let reply;
+  const { context } = setup({ runtime: { sendMessage(message, callback) { reply = callback; } } });
+  const canvas = { getContext: () => ({ drawImage() {} }), toDataURL: () => 'data:image/png;base64,wrong-page' };
+  context.document.createElement = () => canvas;
+  context.Image = class {
+    constructor() { this.width = 1600; this.height = 1000; }
+    set src(value) { this.onload(); }
+  };
+  const pending = context.captureScreenshotNative(area);
+  context.document.hidden = true;
+  const onVisibilityChange = context.document.addEventListener.mock.calls.find(([type]) => type === 'visibilitychange')?.[1];
+  onVisibilityChange?.();
+  context.document.hidden = false;
+  reply({ success: true, dataUrl: 'data:image/png;base64,viewport' });
+  await expect(pending).resolves.toBeNull();
+  expect(context.document.removeEventListener).toHaveBeenCalledWith('visibilitychange', onVisibilityChange);
 });
 
 describe('captureFrameworkContext', () => {

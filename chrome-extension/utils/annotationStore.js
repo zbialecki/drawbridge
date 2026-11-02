@@ -38,11 +38,17 @@
   }
 
   function validateMetadata(task) {
+    if (!task || typeof task !== 'object' || Array.isArray(task)) throw new Error('Invalid annotation metadata');
     for (const field of ['id', 'title', 'comment', 'status', 'timestamp']) {
       if (!Object.prototype.hasOwnProperty.call(task, field)) {
         throw new Error(`Task missing required field: ${field}`);
       }
     }
+    for (const field of ['id', 'title', 'comment']) {
+      if (typeof task[field] !== 'string') throw new Error(`Task ${field} must be a string`);
+    }
+    if (!task.id.trim()) throw new Error('Task id cannot be empty');
+    if (!Number.isFinite(task.timestamp)) throw new Error('Task timestamp must be a finite number');
     if (task.selector != null && typeof task.selector !== 'string') {
       throw new Error(`Task selector must be a string or null, got: ${typeof task.selector}`);
     }
@@ -54,7 +60,7 @@
       throw new Error('Invalid screenshot path');
     }
     if (task.attachments && (!Array.isArray(task.attachments) ||
-        !task.attachments.every(p => /^\.\/reference-\d+\.[a-z0-9]+$/.test(p)))) {
+        !task.attachments.every(p => typeof p === 'string' && /^\.\/reference-\d+\.[a-z0-9]+$/.test(p)))) {
       throw new Error('Invalid reference image path');
     }
   }
@@ -166,6 +172,7 @@
             screenshotPath: '',
             attachments: []
           };
+          validateMetadata(task);
           if (screenshot) {
             await writeFile(directory, 'screenshot.png', this.imageBlob(screenshot).blob);
             task.screenshotPath = './screenshot.png';
@@ -176,7 +183,6 @@
             await writeFile(directory, filename, blob);
             task.attachments.push(`./${filename}`);
           }
-          validateMetadata(task);
           await writeFile(directory, 'comment.md', commentMarkdown(task));
           // Publish metadata last so incomplete folders are never shown as saved tasks.
           await writable.write(JSON.stringify(task, null, 2));
@@ -282,7 +288,7 @@
     }
   }
 
-  const api = { AnnotationStore, timestampFolder };
+  const api = { AnnotationStore, timestampFolder, validateMetadata };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.DrawbridgeAnnotationStore = api;
 })();

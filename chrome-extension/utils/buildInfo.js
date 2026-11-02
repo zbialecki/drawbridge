@@ -1,24 +1,26 @@
 // Shared build id — keep DRAWBRIDGE_FEATURE_BUILD in sync across content + background
-const DRAWBRIDGE_FEATURE_BUILD = 'panel-owned-folder-v1';
+(function () {
+  const DRAWBRIDGE_FEATURE_BUILD = 'panel-owned-folder-v2';
 
-function getContentScriptBuild(manifestVersion) {
-  return `${manifestVersion}-${DRAWBRIDGE_FEATURE_BUILD}`;
-}
+  function getContentScriptBuild(manifestVersion) {
+    return `${manifestVersion}-${DRAWBRIDGE_FEATURE_BUILD}`;
+  }
 
-if (typeof module !== 'undefined' && module.exports) {
-  const api = {
-    DRAWBRIDGE_FEATURE_BUILD,
-    getContentScriptBuild
-  };
-  module.exports = api;
-  if (typeof globalThis !== 'undefined') {
+  if (typeof module !== 'undefined' && module.exports) {
+    const api = {
+      DRAWBRIDGE_FEATURE_BUILD,
+      getContentScriptBuild
+    };
+    module.exports = api;
+    if (typeof globalThis !== 'undefined') {
+      globalThis.DrawbridgeBuildInfo = api;
+    }
+  } else {
+    const api = {
+      DRAWBRIDGE_FEATURE_BUILD,
+      getContentScriptBuild
+    };
+    self.DrawbridgeBuildInfo = api;
     globalThis.DrawbridgeBuildInfo = api;
   }
-} else {
-  const api = {
-    DRAWBRIDGE_FEATURE_BUILD,
-    getContentScriptBuild
-  };
-  self.DrawbridgeBuildInfo = api;
-  globalThis.DrawbridgeBuildInfo = api;
-}
+})();

@@ -36,6 +36,16 @@ test('installs the /bridge command for each agent without touching project files
   expect(fixture.read('.codex/prompts/bridge.md')).toBe(command);
 });
 
+test('connecting preserves existing agent commands, including an empty file', async () => {
+  const commands = [['.claude/commands', 'My custom command'], ['.windsurf/workflows', ''], ['.codex/prompts', 'My saved prompt']];
+  for (const [folder, content] of commands) {
+    fs.mkdirSync(path.join(fixture.root, folder), { recursive: true });
+    fs.writeFileSync(path.join(fixture.root, folder, 'bridge.md'), content);
+  }
+  await installProjectFiles(fixture.directory);
+  for (const [folder, content] of commands) expect(fixture.read(`${folder}/bridge.md`)).toBe(content);
+});
+
 test('adds agent folders to an existing .gitignore only once', async () => {
   fs.writeFileSync(path.join(fixture.root, '.gitignore'), 'node_modules/\n.claude/\n');
   await installProjectFiles(fixture.directory);

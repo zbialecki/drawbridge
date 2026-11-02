@@ -278,6 +278,7 @@ function setupPageShortcut() {
     screenBackdrop: null, drawingMode: false, commentMode: false, commentBox: null,
     sidePanelConnections: 1, isDrawing: false, screenCapturePending: false, annotationCapturePending: false,
     createScreenCommentBox: jest.fn(async () => ({ success: true })),
+    enterCommentMode: jest.fn(), enterDrawingMode: jest.fn(), exportAnnotations: jest.fn(), hasPressedC: false,
     showNotification: jest.fn(), setTimeout: jest.fn(), clearTimeout: jest.fn() });
   vm.runInContext(section(contentSource, '  // Listen for keyboard events', '  // Listen for messages from background script'), context);
   const event = (overrides = {}) => ({ key: 's', target: { matches: () => false, closest: () => null },
@@ -285,12 +286,18 @@ function setupPageShortcut() {
   return { context, document, keydown, event };
 }
 
-test('S captures from the page while its side panel is open', () => {
+test('plain annotation shortcuts work while the side panel is open', () => {
   const { context, keydown, event } = setupPageShortcut();
-  const key = event();
-  keydown(key);
-  expect(key.preventDefault).toHaveBeenCalled();
+  for (const name of ['s', 'c', 'r']) {
+    const key = event({ key: name });
+    keydown(key);
+    expect(key.preventDefault).toHaveBeenCalled();
+  }
   expect(context.createScreenCommentBox).toHaveBeenCalledTimes(1);
+  expect(context.enterCommentMode).toHaveBeenCalledTimes(1);
+  expect(context.enterDrawingMode).toHaveBeenCalledWith('rectangle');
+  keydown(event({ key: 'e', metaKey: true, shiftKey: true }));
+  expect(context.exportAnnotations).toHaveBeenCalledTimes(1);
 });
 
 test.each([
@@ -299,13 +306,17 @@ test.each([
   { target: { matches: selector => selector.includes('input'), closest: () => null } },
   { target: { matches: () => false, isContentEditable: true, closest: () => ({}) } },
   { target: { matches: () => false, closest: () => ({}) } },
-  { target: { matches: selector => selector === 'select', closest: () => null } }
-])('S does not capture while typing or using a modified shortcut: %p', overrides => {
+  { target: { matches: selector => selector.includes('select'), closest: () => null } }
+])('annotation shortcuts preserve typing and browser shortcuts: %p', overrides => {
   const { context, keydown, event } = setupPageShortcut();
-  const key = event(overrides);
-  keydown(key);
-  expect(key.preventDefault).not.toHaveBeenCalled();
+  for (const name of ['s', 'c', 'r']) {
+    const key = event({ ...overrides, key: name });
+    keydown(key);
+    expect(key.preventDefault).not.toHaveBeenCalled();
+  }
   expect(context.createScreenCommentBox).not.toHaveBeenCalled();
+  expect(context.enterCommentMode).not.toHaveBeenCalled();
+  expect(context.enterDrawingMode).not.toHaveBeenCalled();
 });
 
 test.each(['hidden', 'closed', 'draft', 'pending', 'annotation pending'])('S is ignored when the page is %s', state => {

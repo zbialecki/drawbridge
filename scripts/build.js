@@ -19,25 +19,21 @@ const SOURCE_DIR = path.join(ROOT_DIR, 'chrome-extension');
 const BUILD_DIR = path.join(ROOT_DIR, 'build', 'chrome-extension');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
 
-// Files and directories to exclude
-const EXCLUDE_PATTERNS = [
-  'tests',
-  '*.test.js',
-  'ARCHITECTURE.md',
-  'README.md'
-];
+// Package runtime assets only; the source folder may also contain private feedback or secrets.
+const RUNTIME_FILES = new Set([
+  'manifest.json', 'background.js', 'content_script.js', 'content.css',
+  'utils/buildInfo.js', 'utils/elementPicker.js', 'utils/frameworkContext.js',
+  'utils/annotationStore.js', 'utils/persistence.js',
+  'sidepanel/sidepanel.html', 'sidepanel/sidepanel.js', 'sidepanel/sidepanel.css', 'sidepanel/projectSetup.js',
+  'offscreen/folderAccess.html', 'offscreen/folderAccess.js', 'rules-templates/bridge.md',
+  'icons/drawbridge-feedback-16.png', 'icons/drawbridge-feedback-32.png', 'icons/drawbridge-feedback-48.png',
+  'icons/drawbridge-feedback-128.png', 'icons/drawbridge-feedback-512.png',
+  'icons/drawbridge-icon-dark.svg', 'icons/drawbridge-icon-light.svg'
+]);
 
-// Helper function to check if a path should be excluded
 function shouldExclude(relativePath) {
-  return EXCLUDE_PATTERNS.some(pattern => {
-    if (pattern.includes('*')) {
-      // Handle wildcard patterns
-      const regex = new RegExp(pattern.replace('*', '.*'));
-      return regex.test(relativePath);
-    }
-    // Handle exact matches and directory names
-    return relativePath.includes(pattern);
-  });
+  const name = relativePath.split(path.sep).join('/');
+  return !RUNTIME_FILES.has(name) && ![...RUNTIME_FILES].some(file => file.startsWith(`${name}/`));
 }
 
 // Helper function to recursively copy directory with exclusions

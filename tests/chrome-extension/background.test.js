@@ -1,5 +1,6 @@
 const manifest = require('../../chrome-extension/manifest.json');
 const { getContentScriptBuild } = require('../../chrome-extension/utils/buildInfo.js');
+const { deferred } = require('../helpers/test-utils');
 
 function getReadyPing(overrides = {}) {
   return {
@@ -38,6 +39,7 @@ function loadBackground({ sendMessage, insertCSS, executeScript } = {}) {
       }
     },
     tabs: {
+      query: jest.fn(async () => [{ id: 7, windowId: 3 }]),
       sendMessage: sendMessage || jest.fn((tabId, message, callback) => callback(getReadyPing())),
       captureVisibleTab: jest.fn()
     },
@@ -225,20 +227,24 @@ describe('background action click handling', () => {
 });
 
 
-test('native capture uses the sender window and keeps the response channel open until capture finishes', () => {
+test('native capture uses the sender window and keeps the response channel open until capture finishes', async () => {
   loadBackground();
+  const started = deferred();
   let reply;
-  chrome.tabs.captureVisibleTab.mockImplementation((windowId, options, callback) => { reply = callback; });
+  chrome.tabs.captureVisibleTab.mockImplementation((windowId, options, callback) => { reply = callback; started.resolve(); });
   const handler = chrome.runtime.onMessage.addListener.mock.calls[0][0];
   const respond = jest.fn();
   expect(handler({ type: 'CAPTURE_SCREENSHOT' }, { tab: { id: 7, windowId: 3 } }, respond)).toBe(true);
+  await started.promise;
   expect(chrome.tabs.captureVisibleTab).toHaveBeenCalledWith(3, { format: 'png' }, expect.any(Function));
   expect(respond).not.toHaveBeenCalled();
   reply('data:image/png;base64,captured');
+  await new Promise(setImmediate);
   expect(respond).toHaveBeenCalledWith({ success: true, dataUrl: 'data:image/png;base64,captured' });
+  expect(chrome.tabs.query).toHaveBeenCalledWith({ active: true, windowId: 3 });
 });
 
-test('native capture reports permission errors instead of returning a successful screenshot', () => {
+test('native capture reports permission errors instead of returning a successful screenshot', async () => {
   loadBackground();
   jest.spyOn(console, 'error').mockImplementation(() => {});
   chrome.tabs.captureVisibleTab.mockImplementation((windowId, options, callback) => {
@@ -247,7 +253,24 @@ test('native capture reports permission errors instead of returning a successful
   const handler = chrome.runtime.onMessage.addListener.mock.calls[0][0];
   const respond = jest.fn();
   expect(handler({ type: 'CAPTURE_SCREENSHOT' }, { tab: { id: 7, windowId: 3 } }, respond)).toBe(true);
+  await new Promise(setImmediate);
   expect(respond).toHaveBeenCalledWith({ success: false, error: 'Capture permission denied' });
+});
+
+test.each(['before', 'during'])('rejects screenshots when the active tab changes %s capture', async stage => {
+  loadBackground();
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  if (stage === 'before') chrome.tabs.query.mockResolvedValue([{ id: 99, windowId: 3 }]);
+  chrome.tabs.captureVisibleTab.mockImplementation((windowId, options, reply) => {
+    chrome.tabs.query.mockResolvedValue([{ id: 99, windowId: 3 }]);
+    reply('data:image/png;base64,another-tab');
+  });
+  const handler = chrome.runtime.onMessage.addListener.mock.calls[0][0];
+  const result = await new Promise(resolve => {
+    expect(handler({ type: 'CAPTURE_SCREENSHOT' }, { tab: { id: 7, windowId: 3 } }, resolve)).toBe(true);
+  });
+  expect(result).toMatchObject({ success: false, error: expect.stringContaining('active') });
+  expect(chrome.tabs.captureVisibleTab).toHaveBeenCalledTimes(stage === 'before' ? 0 : 1);
 });
 
 test('relay stamps source tab and window from sender rather than payload', () => {

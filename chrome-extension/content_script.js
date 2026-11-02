@@ -282,10 +282,14 @@
    */
   async function captureScreenshotNative(captureArea, padding = 100) {
     const runtime = globalThis.chrome?.runtime;
-    if (!runtime?.sendMessage) return null;
+    if (!runtime?.sendMessage || document.hidden) return null;
+    let pageWasHidden = false;
+    const onVisibilityChange = () => { if (document.hidden) pageWasHidden = true; };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     return new Promise((resolve) => {
       runtime.sendMessage({ type: 'CAPTURE_SCREENSHOT' }, (response) => {
+        if (pageWasHidden || document.hidden) { resolve(null); return; }
         if (runtime.lastError) {
           console.warn('Screenshot message failed:', runtime.lastError);
           resolve(null);
@@ -300,6 +304,7 @@
 
         const img = new Image();
         img.onload = () => {
+          if (pageWasHidden || document.hidden) { resolve(null); return; }
           try {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
@@ -348,7 +353,7 @@
     }).catch(error => {
       console.warn('Screenshot message failed:', error);
       return null;
-    });
+    }).finally(() => document.removeEventListener('visibilitychange', onVisibilityChange));
   }
 
   // Folder access lives in the side panel, so requests fail if it is closed or showing another tab.
@@ -494,111 +499,35 @@
 
   // Get CSS selector for element
   function getSelector(element) {
-    // First, check for ID
     if (element.id) {
-      return `#${element.id}`;
+      const selector = `#${CSS.escape(element.id)}`;
+      if (validateSelector(selector, element)) return selector;
     }
-    
     const tagName = element.tagName.toLowerCase();
-    
-    // For links, try href attribute
-    if (tagName === 'a' && element.href) {
-      const href = element.getAttribute('href');
-      if (href && href !== '#') {
-        return `a[href="${href}"]`;
-      }
+    const attributes = ['data-testid', 'data-id', 'data-component', 'aria-label', 'name', 'role'];
+    if (tagName === 'a') attributes.unshift('href');
+    for (const attribute of attributes) {
+      const value = element.getAttribute(attribute);
+      if (!value || value === '#') continue;
+      const selector = `${tagName}[${attribute}="${CSS.escape(value)}"]`;
+      if (validateSelector(selector, element)) return selector;
     }
-    
-    // Check for unique attributes
-    const uniqueAttributes = ['data-testid', 'data-id', 'data-component', 'aria-label', 'name', 'role'];
-    for (const attr of uniqueAttributes) {
-      const value = element.getAttribute(attr);
-      if (value) {
-        return `${tagName}[${attr}="${value}"]`;
-      }
-    }
-    
-    // For buttons/inputs with specific text
-    if (tagName === 'button') {
-      const text = element.textContent.trim();
-      if (text && document.querySelectorAll(`button`).length > 1) {
-        // Use nth-of-type to be more specific
-        const parent = element.parentElement;
-        const buttons = Array.from(parent.querySelectorAll('button'));
-        const index = buttons.indexOf(element) + 1;
-        if (index > 0) {
-          return `${getSelector(parent)} > button:nth-of-type(${index})`;
-        }
-      }
-    }
-    
-    // Build path-based selector
+
     const path = [];
-    let current = element;
-    
-    while (current && current !== document.body) {
-      let selector = current.tagName.toLowerCase();
-      
-      // Skip if we hit an element with ID
-      if (current.id) {
-        path.unshift(`#${current.id}`);
-        break;
+    for (let current = element; current; current = current.parentElement) {
+      if (current !== element && current.id) {
+        const selector = [`#${CSS.escape(current.id)}`, ...path].join(' > ');
+        if (validateSelector(selector, element)) return selector;
       }
-      
-      // For containers, try to use semantic selectors
-      if (selector === 'div' || selector === 'section' || selector === 'article') {
-        const role = current.getAttribute('role');
-        const dataTestId = current.getAttribute('data-testid');
-        
-        if (role) {
-          selector = `${selector}[role="${role}"]`;
-        } else if (dataTestId) {
-          selector = `${selector}[data-testid="${dataTestId}"]`;
-        } else {
-          // Add classes (but filter out moat classes and common utility classes)
-          if (current.className && typeof current.className === 'string') {
-            const classes = current.className
-              .split(' ')
-              .filter(c => c && !c.startsWith('moat-') && !c.match(/^(w-|h-|p-|m-|flex|grid|block|inline)/))
-              .slice(0, 2); // Only use first 2 meaningful classes
-            
-            if (classes.length > 0) {
-              selector += `.${classes.join('.')}`;
-            }
-          }
-        }
-      } else {
-        // For non-containers, add classes
-        if (current.className && typeof current.className === 'string') {
-          const classes = current.className
-            .split(' ')
-            .filter(c => c && !c.startsWith('moat-'))
-            .slice(0, 2);
-          
-          if (classes.length > 0) {
-            selector += `.${classes.join('.')}`;
-          }
-        }
-      }
-      
-      // Add nth-child if needed
-      if (current.parentElement) {
-        const siblings = Array.from(current.parentElement.children);
-        const index = siblings.indexOf(current) + 1;
-        
-        // Only add nth-child if there are multiple siblings of same type
-        const sameTags = siblings.filter(s => s.tagName === current.tagName);
-        if (sameTags.length > 1) {
-          selector += `:nth-child(${index})`;
-        }
-      }
-      
-      path.unshift(selector);
-      current = current.parentElement;
+      const siblings = current.parentElement
+        ? [...current.parentElement.children].filter(sibling => sibling.tagName === current.tagName) : [];
+      let part = current.tagName.toLowerCase();
+      if (siblings.length > 1) part += `:nth-of-type(${siblings.indexOf(current) + 1})`;
+      path.unshift(part);
+      const selector = path.join(' > ');
+      if (validateSelector(selector, element)) return selector;
     }
-    
-    // Return the path, limited to last 3 elements for brevity
-    return path.slice(-3).join(' > ');
+    return null;
   }
 
   // Validate selector returns exactly one element
@@ -773,10 +702,7 @@
       const rect = element.getBoundingClientRect();
       const selector = getSelector(element);
       
-      // Validate selector
-      if (!validateSelector(selector, element)) {
-        console.warn('Moat: Selector validation failed, using fallback');
-      }
+      if (!selector) console.warn('Drawbridge: No unique selector; saving the element context and screenshot.');
       
       // Calculate click position relative to element (for thumbnail centering)
       const clickX = x - rect.x;
@@ -790,7 +716,7 @@
         target: selector,
         elementLabel: getElementLabel(element),
         elementContext: getElementContext(element),
-        selectorMethod: "querySelector",
+        selectorMethod: selector ? 'querySelector' : 'unavailable',
         boundingRect: {
           x: Math.round(rect.x),
           y: Math.round(rect.y),
@@ -859,6 +785,7 @@
 
   // Remove comment box
   function removeCommentBox() {
+    if (commentBox?.isSubmitting) return false;
     if (commentBox) {
       commentBox.remove();
       commentBox = null;
@@ -867,6 +794,7 @@
       screenBackdrop.remove();
       screenBackdrop = null;
     }
+    return true;
   }
 
   function closeScreenCommentBox() {
@@ -1051,6 +979,7 @@
 
   // Exit comment mode
   function exitCommentMode() {
+    if (commentBox?.isSubmitting) return;
     commentMode = false;
     commentCaptureVersion++;
     document.body.classList.remove('float-comment-mode');
@@ -1187,6 +1116,7 @@
     }
     if (screenCapturePending || annotationCapturePending) return;
     annotationCapturePending = true;
+    const captureVersion = commentCaptureVersion;
     const frameworkContext = captureFrameworkContext();
     
     // Capture screenshot with rectangle drawn on canvas
@@ -1202,6 +1132,7 @@
       
       // Brief delay to ensure canvas is rendered before capture
       await new Promise(resolve => setTimeout(resolve, 16));
+      if (captureVersion !== commentCaptureVersion) return;
       
       // Calculate capture area in viewport coordinates
       const padding = 100;
@@ -1229,7 +1160,9 @@
       console.warn('Screenshot capture failed:', e);
     } finally {
       annotationCapturePending = false;
+      if (captureVersion !== commentCaptureVersion) removeDrawingCanvas();
     }
+    if (captureVersion !== commentCaptureVersion) return;
     
     // Create comment box
     commentBox = document.createElement('div');
@@ -1373,15 +1306,15 @@
     
     // Event listeners
     submitBtn.addEventListener('click', e => (isUserAction(e) ? handleSubmit() : undefined));
-    cancelBtn.addEventListener('click', () => {
-      // Clear canvas and exit drawing mode
+    const handleCancel = () => {
+      if (!removeCommentBox()) return;
       if (drawingCtx && drawingCanvas) {
         drawingCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
       }
       exitDrawingMode();
       removeDrawingCanvas();
-      removeCommentBox();
-    });
+    };
+    cancelBtn.addEventListener('click', handleCancel);
     
     textarea.addEventListener('keydown', (e) => {
       // Skip Enter/Escape while IME is composing (Japanese, Chinese, Korean, etc.)
@@ -1389,13 +1322,7 @@
         e.preventDefault();
         handleSubmit();
       } else if (e.key === 'Escape' && !e.isComposing && e.keyCode !== 229) {
-        // Clear canvas and exit drawing mode
-        if (drawingCtx && drawingCanvas) {
-          drawingCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
-        }
-        exitDrawingMode();
-        removeDrawingCanvas();
-        removeCommentBox();
+        handleCancel();
       }
     });
   }
@@ -1463,6 +1390,7 @@
   window.addEventListener('blur', () => setControlKeyHeld(false));
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') {
+      commentCaptureVersion++;
       setControlKeyHeld(false);
     }
   });
@@ -1936,6 +1864,7 @@
 
   // Listen for keyboard events
   document.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
     if (e.key === 'Escape' && screenBackdrop && !e.isComposing && e.keyCode !== 229) {
       e.preventDefault();
       closeScreenCommentBox();
@@ -1958,8 +1887,10 @@
       return;
     }
     
-    // Don't process keyboard shortcuts if in input fields
-    if (e.target.matches('input, textarea')) {
+    // Plain annotation shortcuts must not consume typing or browser commands.
+    if (e.target.matches('input, textarea, select') || e.target.isContentEditable ||
+        e.target.closest?.('[role="textbox"]') ||
+        ((e.ctrlKey || e.metaKey || e.altKey || e.repeat) && ['c', 'r', 's'].includes(e.key.toLowerCase()))) {
       return;
     }
     
@@ -1976,10 +1907,7 @@
       !screenCapturePending && !annotationCapturePending;
 
     // Screen capture is a plain S only, never a browser shortcut or text input.
-    if ((e.key === 'S' || e.key === 's') && canSwitchTools && canUseShortcuts &&
-        !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat && !e.isComposing && e.keyCode !== 229 &&
-        !e.target.isContentEditable && !e.target.closest?.('[contenteditable], [role="textbox"]') &&
-        !e.target.matches('select')) {
+    if ((e.key === 'S' || e.key === 's') && canSwitchTools && canUseShortcuts) {
       e.preventDefault();
       createScreenCommentBox().then(result => {
         if (!result.success) showNotification(result.error, 'error');
@@ -2063,7 +1991,7 @@
     }
 
     else if (request.type === 'ENTER_COMMENT_MODE') {
-      if (screenBackdrop || screenCapturePending) {
+      if (screenBackdrop || screenCapturePending || annotationCapturePending || commentBox?.isSubmitting) {
         if (commentBox) shakeCommentBox();
         sendResponse({ success: false, error: 'Finish or cancel the current annotation first.' });
         return true;
@@ -2074,7 +2002,7 @@
     }
 
     else if (request.type === 'ENTER_DRAWING_MODE') {
-      if (screenBackdrop || screenCapturePending) {
+      if (screenBackdrop || screenCapturePending || annotationCapturePending || commentBox?.isSubmitting) {
         if (commentBox) shakeCommentBox();
         sendResponse({ success: false, error: 'Finish or cancel the current annotation first.' });
         return true;
@@ -2085,7 +2013,7 @@
     }
 
     else if (request.type === 'EXIT_ANNOTATION_MODE') {
-      if (screenBackdrop || screenCapturePending) {
+      if (screenBackdrop || screenCapturePending || annotationCapturePending || commentBox?.isSubmitting) {
         if (commentBox) shakeCommentBox();
         sendResponse({ success: false, error: 'Finish or cancel the current annotation first.' });
         return true;

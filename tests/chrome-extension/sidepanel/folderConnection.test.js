@@ -3,6 +3,7 @@ const vm = require('node:vm');
 const { JSDOM } = require('jsdom');
 const { directoryFixture } = require('../../helpers/directory-handle');
 const { indexedDBFixture } = require('../../helpers/indexed-db');
+const { deferred } = require('../../helpers/test-utils');
 const { AnnotationStore } = require('../../../chrome-extension/utils/annotationStore');
 const { MoatPersistence } = require('../../../chrome-extension/utils/persistence');
 
@@ -110,6 +111,46 @@ describe('connecting', () => {
     expect(view.notices()).toEqual(['Project connected']);
     expect(view.document.querySelector('.status-text').textContent).toBe(fixture.directory.name);
     expect(await persistence.getAllHandles()).toMatchObject([{ id: `project_${ORIGIN}`, origin: ORIGIN }]);
+
+    view.document.querySelector('[data-action="disconnect"]').click();
+    await until(() => view.notices().includes('Project disconnected'));
+    const otherFolder = await fixture.directory.getDirectoryHandle('another-project', { create: true });
+    view.panel.showDirectoryPicker.mockResolvedValue(otherFolder);
+    await view.panel.chooseFolder();
+    expect(view.panel.DrawbridgeProjectSetup.installProjectFiles).toHaveBeenCalledTimes(2);
+    expect(view.panel.DrawbridgeProjectSetup.installProjectFiles).toHaveBeenLastCalledWith(otherFolder);
+  });
+
+  test.each(['picker', 'persistence', 'reconnect', 'reuse'])('a tab switch during %s cannot attach its folder to the new site', async stage => {
+    if (stage === 'reuse' || stage === 'reconnect') {
+      await persistence.persistProjectConnection(fixture.directory, 'project', stage === 'reuse' ? OTHER : ORIGIN);
+    }
+    if (stage === 'reconnect') fixture.directory.queryPermission.mockResolvedValue('prompt');
+    const view = await openPanel();
+    const started = deferred();
+    const resume = deferred();
+    const pause = async result => { started.resolve(); await resume.promise; return result; };
+    if (stage === 'picker') view.panel.showDirectoryPicker.mockImplementation(() => pause(fixture.directory));
+    if (stage === 'persistence') {
+      const persist = persistence.persistProjectConnection.bind(persistence);
+      jest.spyOn(persistence, 'persistProjectConnection').mockImplementationOnce(async (...args) => {
+        await pause();
+        return persist(...args);
+      });
+    }
+    if (stage === 'reconnect') fixture.directory.requestPermission.mockImplementation(() => pause('granted'));
+    if (stage === 'reuse') jest.spyOn(persistence, 'verifyPermission').mockImplementationOnce(() => pause(true));
+    const pending = stage === 'picker' || stage === 'persistence' ? view.panel.chooseFolder() : view.panel.acceptFolderOffer();
+    await started.promise;
+    view.tab.id = 2;
+    view.tab.url = 'https://unconnected.example/';
+    await view.panel.handleTabChange();
+    resume.resolve();
+    await pending;
+    expect(view.connected()).toBe(false);
+    expect((await persistence.getAllHandles()).some(record => record.origin === 'https://unconnected.example')).toBe(false);
+    expect(await view.request(saveMessage('wrong-project'), view.sender())).toMatchObject({ success: false });
+    expect(fixture.exists('26-11-01 15-42')).toBe(false);
   });
 
   test('cancelling the picker leaves the site disconnected', async () => {
@@ -130,13 +171,13 @@ describe('connecting', () => {
     expect(view.panel.showDirectoryPicker).not.toHaveBeenCalled();
   });
 
-  test('a saved connection restores without any prompt and installs commands once per site', async () => {
+  test('a saved connection restores without prompting or writing project files', async () => {
     await persistence.persistProjectConnection(fixture.directory, 'project', ORIGIN);
     const view = await openPanel();
     expect(view.connected()).toBe(true);
     await view.panel.handleTabChange(); // A navigation in the same site.
     expect(view.connected()).toBe(true);
-    expect(view.panel.DrawbridgeProjectSetup.installProjectFiles).toHaveBeenCalledTimes(1);
+    expect(view.panel.DrawbridgeProjectSetup.installProjectFiles).not.toHaveBeenCalled();
     expect(view.panel.showDirectoryPicker).not.toHaveBeenCalled();
     expect(fixture.directory.requestPermission).not.toHaveBeenCalled();
   });
@@ -315,10 +356,17 @@ describe('managing saved annotations', () => {
     expect(fixture.exists('26-11-01 15-42/metadata.json')).toBe(true);
   });
 
-  test('loads thumbnails through the panel', async () => {
+  test('loads a fresh thumbnail when a deleted annotation folder is reused', async () => {
     const view = await withTasks(['one']);
-    await until(() => view.document.querySelector('.thumbnail-img').getAttribute('src'));
-    expect(view.document.querySelector('.thumbnail-img').getAttribute('src')).toMatch(/^data:image\/png;base64,/);
+    await until(() => view.document.querySelector('.thumbnail-img')?.getAttribute('src'));
+    expect(view.document.querySelector('.thumbnail-img').getAttribute('src')).toBe(IMAGE);
+    view.document.querySelector('.thumbnail-delete-btn').click();
+    await until(() => view.document.querySelectorAll('.task-card').length === 0);
+    const next = saveMessage('two');
+    next.annotation.screenshot = 'data:image/png;base64,eQ==';
+    expect(await view.request(next, view.sender())).toEqual({ success: true, folderName: '26-11-01 15-42' });
+    await until(() => view.document.querySelector('.thumbnail-img')?.getAttribute('src'));
+    expect(view.document.querySelector('.thumbnail-img').getAttribute('src')).toBe(next.annotation.screenshot);
   });
 
   test('metadata cannot inject markup into the panel', async () => {

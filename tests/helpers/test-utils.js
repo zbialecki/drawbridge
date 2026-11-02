@@ -9,9 +9,9 @@ function sourceSection(source, start, end) {
 }
 
 function deferred() {
-  let resolve;
-  const promise = new Promise(done => { resolve = done; });
-  return { promise, resolve };
+  let resolve, reject;
+  const promise = new Promise((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
 }
 
 module.exports = { sourceSection, deferred };

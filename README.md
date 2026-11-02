@@ -21,6 +21,8 @@ It is built for browser-to-code feedback loops with Cursor, Claude Code, Codex, 
 
 ### 1. Install The Extension
 
+Requires Chrome 121 or newer.
+
 1. Clone or download this repo.
 2. Open Chrome and go to `chrome://extensions`.
 3. Turn on Developer mode.
@@ -140,7 +142,7 @@ selected-folder/
 
 Folder names use local time in `YY-MM-DD HH-mm` format. Conflicts get `_2`, `_3`, and so on. `comment.md` contains the full comment and status; `metadata.json` contains one annotation, including its page URL, selector, geometry, status, and image paths relative to that folder. A failed capture simply omits `screenshot.png`. Failed file writes keep the editor open for retry.
 
-Drawbridge also installs `.claude/commands/bridge.md`, `.windsurf/workflows/bridge.md`, and `.codex/prompts/bridge.md` in the selected folder, and adds those workflow directories to an existing `.gitignore`. If annotations are saved outside your code project, tell your AI tool where that output folder is.
+On an explicit project connection, Drawbridge creates missing `.claude/commands/bridge.md`, `.windsurf/workflows/bridge.md`, and `.codex/prompts/bridge.md` files and adds those workflow directories to an existing `.gitignore`. Existing commands are left unchanged; update them manually from `chrome-extension/rules-templates/bridge.md` when needed. If annotations are saved outside your code project, tell your AI tool where that output folder is.
 
 ## Development
 
@@ -150,9 +152,9 @@ npm test
 npm run build
 ```
 
-The build output is written to `dist/drawbridge-v<version>.zip`. Tests live in [`tests/`](tests/README.md), mirroring the source directories.
+The build output is written to `dist/drawbridge-v<version>.zip`. Add new runtime assets to the allowlist in `scripts/build.js`; other files, including annotations and local secrets, are not packaged. Tests live in [`tests/`](tests/README.md), mirroring the source directories.
 
-For the optional clipboard watcher, run `node /path/to/drawbridge/scripts/drawbridge-watcher.js` from the selected output folder (or `npm run watch` when it is this repository's root). It reads timestamped annotations and keeps a `watcher.json` receipt inside each copied annotation's folder.
+For the optional clipboard watcher, run `node /path/to/drawbridge/scripts/drawbridge-watcher.js` from the selected output folder (or `npm run watch` when it is this repository's root). It copies pending annotations together as one clipboard prompt and keeps a `watcher.json` receipt inside each copied annotation's folder.
 
 ## Troubleshooting
 

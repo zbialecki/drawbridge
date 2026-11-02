@@ -183,6 +183,22 @@ test('rejects image paths escaping the selected folder', async () => {
   }
 });
 
+test('skips mistyped metadata without hiding valid annotations or changing the files', async () => {
+  await store.saveAnnotation(annotation(), taskData);
+  const invalid = [{ id: 7 }, { id: ' ' }, { title: {} }, { comment: { toString: 0 } }, { timestamp: 'yesterday' }];
+  const files = [];
+  for (const [index, changes] of invalid.entries()) {
+    const name = `${folder}_${index + 2}`;
+    fs.mkdirSync(path.join(fixture.root, name));
+    const text = JSON.stringify({ ...metadata(), ...changes });
+    fs.writeFileSync(path.join(fixture.root, name, 'metadata.json'), text);
+    files.push([name, text]);
+  }
+  jest.spyOn(console, 'warn').mockImplementation(() => {});
+  expect((await store.loadTasksFromFile()).map(task => task.id)).toEqual(['one']);
+  for (const [name, text] of files) expect(fixture.read(`${name}/metadata.json`)).toBe(text);
+});
+
 test('a .moat folder is ignored and left untouched', async () => {
   fs.mkdirSync(path.join(fixture.root, '.moat'));
   const original = JSON.stringify([{ id: 'old', ...taskData, status: 'to do', timestamp: 1 }]);

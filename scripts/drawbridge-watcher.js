@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { validateMetadata } = require('../chrome-extension/utils/annotationStore');
 
 const FOLDER_PATTERN = /^\d{2}-\d{2}-\d{2} \d{2}-\d{2}(?:_[1-9]\d*)?$/;
 
@@ -13,7 +14,8 @@ function readAnnotations(root) {
     const directory = path.join(root, entry.name);
     try {
       const metadata = JSON.parse(fs.readFileSync(path.join(directory, 'metadata.json'), 'utf8'));
-      if (metadata.format !== 'drawbridge-annotation' || metadata.status === 'done') continue;
+      validateMetadata(metadata);
+      if (metadata.status === 'done') continue;
       annotations.push({ directory, metadata });
     } catch (error) {
       if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) {
@@ -39,6 +41,7 @@ function copyToClipboard(text) {
 }
 
 function processAnnotations(root, copy = copyToClipboard) {
+  const pending = [];
   for (const { directory, metadata } of readAnnotations(root)) {
     const receipt = path.join(directory, 'watcher.json');
     try {
@@ -58,12 +61,14 @@ function processAnnotations(root, copy = copyToClipboard) {
       'Read this folder’s metadata.json, comment.md, screenshot, and reference images before editing.'
     ].filter(Boolean).join('\n');
     console.log(`\n📝 ${path.basename(directory)}\n${prompt}`);
-    if (copy(prompt)) {
-      // Keep watcher state beside the annotation, separate from agent-editable metadata.
-      fs.writeFileSync(receipt, JSON.stringify({ id: metadata.id, copiedAt: Date.now() }, null, 2));
-      console.log('✓ Copied to clipboard');
-    }
+    pending.push({ receipt, id: metadata.id, prompt });
   }
+  if (!pending.length || !copy(pending.map(entry => entry.prompt).join('\n\n---\n\n'))) return;
+  for (const { receipt, id } of pending) {
+    // Keep watcher state beside the annotation, separate from agent-editable metadata.
+    fs.writeFileSync(receipt, JSON.stringify({ id, copiedAt: Date.now() }, null, 2));
+  }
+  console.log('✓ Copied to clipboard');
 }
 
 function main() {

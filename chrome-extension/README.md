@@ -4,6 +4,8 @@ Annotate a running page and save each comment, screenshot, and metadata together
 
 ## Setup
 
+Requires Chrome 121 or newer.
+
 1. Open `chrome://extensions`, enable Developer mode, and load this directory unpacked.
 2. Pin Drawbridge and open the page you want to annotate.
 3. Click the extension icon, then **Connect Project**, and select an output folder.
@@ -49,7 +51,7 @@ New annotations always use the selected folder directly. New annotation folders 
 
 ## Process with an AI Tool
 
-Connecting installs the `/bridge` prompt into `.claude/commands/`, `.windsurf/workflows/`, and `.codex/prompts/` under the selected folder. It does not overwrite the project's README or create shared task indexes.
+Explicitly connecting creates missing `/bridge` prompts in `.claude/commands/`, `.windsurf/workflows/`, and `.codex/prompts/` under the selected folder. Existing commands and the project's README are never overwritten. Restoring a connection does not install project files. Update an older command manually from `rules-templates/bridge.md` when needed.
 
 Run `/bridge` or `bridge`, optionally prefixed with `step`, `batch`, or `yolo`. The prompt discovers timestamped annotation folders and reads each metadata object, comment, screenshot, and pasted reference. Status follows `to do` → `doing` → `done`.
 

@@ -144,24 +144,35 @@ async function handleActionClick(tab) {
   }
 }
 
+async function captureTabScreenshot(tab) {
+  if (!tab?.id) throw new Error('The requesting tab must be active during capture.');
+  const query = { active: true, windowId: tab.windowId };
+  if ((await chrome.tabs.query(query))[0]?.id !== tab.id) {
+    throw new Error('Keep the requesting tab active during capture.');
+  }
+  const dataUrl = await new Promise((resolve, reject) => {
+    chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' }, data => {
+      const error = chrome.runtime.lastError;
+      if (error) reject(new Error(error.message));
+      else resolve(data);
+    });
+  });
+  if ((await chrome.tabs.query(query))[0]?.id !== tab.id) {
+    throw new Error('The active tab changed during capture.');
+  }
+  return { success: true, dataUrl };
+}
+
 // Handle extension icon click - open the native side panel
 chrome.action.onClicked.addListener(handleActionClick);
 
 // Handle screenshot capture requests from content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'CAPTURE_SCREENSHOT') {
-    chrome.tabs.captureVisibleTab(
-      sender.tab.windowId,
-      { format: 'png' },
-      (dataUrl) => {
-        if (chrome.runtime.lastError) {
-          console.error('Screenshot capture failed:', chrome.runtime.lastError);
-          sendResponse({ success: false, error: chrome.runtime.lastError.message });
-        } else {
-          sendResponse({ success: true, dataUrl });
-        }
-      }
-    );
+    captureTabScreenshot(sender.tab).then(sendResponse, error => {
+      console.error('Screenshot capture failed:', error);
+      sendResponse({ success: false, error: error.message });
+    });
     return true; // Required for async sendResponse
   }
   if (message.type === 'CAPTURE_FRAMEWORK_CONTEXT' && sender.tab) {
