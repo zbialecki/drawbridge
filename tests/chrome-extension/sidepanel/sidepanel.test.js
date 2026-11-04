@@ -61,6 +61,49 @@ test('renders task data as text rather than HTML', async () => {
   expect(document.getElementById('todo-badge').textContent).toBe('1');
 });
 
+test('only truncated annotations can be expanded, and the control responds to resizing', async () => {
+  const { context, document, read } = await setup();
+  context.__tasks = [
+    { id: 'long', comment: 'A long annotation\nwith multiple lines of feedback.', selector: 'main > button' },
+    { id: 'short', comment: 'Short annotation' },
+    { id: 'no-selector', comment: 'A long annotation without a selector.' }
+  ];
+  read('isConnected = true; tasks = globalThis.__tasks; renderTasks();');
+  const [longCard, shortCard, noSelectorCard] = document.querySelectorAll('.task-card');
+  const content = longCard.querySelector('.task-content');
+  const button = longCard.querySelector('.task-expand');
+  const noSelectorContent = noSelectorCard.querySelector('.task-content');
+  Object.defineProperty(noSelectorContent, 'clientHeight', { get: () => 40 });
+  Object.defineProperty(noSelectorContent, 'scrollHeight', { get: () => 80 });
+  let overflow = true;
+  Object.defineProperty(content, 'clientHeight', { get: () => 40 });
+  Object.defineProperty(content, 'scrollHeight', { get: () => overflow ? 80 : 40 });
+  context.updateTaskTextOverflowAll();
+  expect(button.hidden).toBe(false);
+  expect(shortCard.querySelector('.task-expand').hidden).toBe(true);
+  expect(noSelectorCard.querySelector('.task-selector')).toBeNull();
+  expect(noSelectorCard.querySelector('.task-expand').hidden).toBe(false);
+  expect(button.getAttribute('aria-controls')).toBe(content.id);
+  expect(button.getAttribute('aria-expanded')).toBe('false');
+
+  button.click();
+  expect(content.classList.contains('expanded')).toBe(true);
+  expect(button.textContent).toBe('Hide');
+  expect(button.getAttribute('aria-expanded')).toBe('true');
+  overflow = false;
+  context.updateTaskTextOverflowAll();
+  expect(button.hidden).toBe(false);
+
+  button.click();
+  expect(content.classList.contains('expanded')).toBe(false);
+  expect(button.textContent).toBe('Expand');
+  expect(button.getAttribute('aria-expanded')).toBe('false');
+  expect(button.hidden).toBe(true);
+  overflow = true;
+  context.updateTaskTextOverflowAll();
+  expect(button.hidden).toBe(false);
+});
+
 test('shows the page path or host before the relative time, with safe fallbacks', async () => {
   const { read, context, document } = await setup();
   const timestamp = Date.now();

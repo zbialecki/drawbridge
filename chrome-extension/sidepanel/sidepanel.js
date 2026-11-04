@@ -29,6 +29,9 @@ const trashIcon = `
 
 // Thumbnail cache
 let thumbnailCache = new Map();
+const taskTextResizeObserver = typeof ResizeObserver === 'function'
+  ? new ResizeObserver(entries => entries.forEach(entry => updateTaskTextOverflow(entry.target)))
+  : null;
 
 // DOM Elements
 const taskContainer = document.getElementById('task-container');
@@ -53,6 +56,8 @@ document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
   setupEventListeners();
+  window.addEventListener('resize', updateTaskTextOverflowAll);
+  document.fonts?.addEventListener('loadingdone', updateTaskTextOverflowAll);
   chrome.tabs.onActivated.addListener(handleTabChange);
   chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     if (tabId === activeTabId && changeInfo.status === 'loading') handleTabChange();
@@ -593,6 +598,7 @@ function updateBadges() {
 
 // Task Rendering
 function renderTasks() {
+  taskTextResizeObserver?.disconnect();
   // Show connect prompt if not connected (whether or not content script is ready)
   if (!isConnected) {
     taskContainer.innerHTML = `
@@ -635,18 +641,42 @@ function renderTasks() {
     return (a.timestamp || a.createdAt || 0) - (b.timestamp || b.createdAt || 0);
   });
 
-  taskContainer.innerHTML = sortedTasks.map(task => renderTaskCard(task)).join('');
+  taskContainer.innerHTML = sortedTasks.map((task, index) => renderTaskCard(task, index)).join('');
 
   // Load thumbnails for tasks with screenshots
   loadThumbnails();
 
   // Add event listeners to task cards
   addTaskEventListeners();
+  taskContainer.querySelectorAll('.task-content').forEach(content => {
+    updateTaskTextOverflow(content);
+    taskTextResizeObserver?.observe(content);
+  });
+}
+
+function updateTaskTextOverflow(content) {
+  const button = content.closest('.task-card')?.querySelector('.task-expand');
+  if (!button || button.getAttribute('aria-expanded') === 'true') return;
+  button.hidden = content.scrollHeight <= content.clientHeight;
+}
+
+function updateTaskTextOverflowAll() {
+  taskContainer.querySelectorAll('.task-content').forEach(updateTaskTextOverflow);
 }
 
 function addTaskEventListeners() {
   taskContainer.querySelectorAll('.task-card').forEach(card => {
     const taskId = card.dataset.taskId;
+
+    const expandButton = card.querySelector('.task-expand');
+    const content = card.querySelector('.task-content');
+    expandButton.addEventListener('click', () => {
+      const expanded = expandButton.getAttribute('aria-expanded') !== 'true';
+      content.classList.toggle('expanded', expanded);
+      expandButton.setAttribute('aria-expanded', String(expanded));
+      expandButton.textContent = expanded ? 'Hide' : 'Expand';
+      if (!expanded) updateTaskTextOverflow(content);
+    });
 
     // Status dropdown
     const statusSelect = card.querySelector('.status-select');
@@ -721,7 +751,7 @@ function setThumbnailSrc(container, src) {
   }
 }
 
-function renderTaskCard(task) {
+function renderTaskCard(task, index = 0) {
   const statusClass = (task.status || 'to do').toLowerCase().replace(' ', '-');
   const timestamp = task.timestamp || task.createdAt;
   const timeAgo = timestamp ? formatTime(timestamp) : '';
@@ -761,8 +791,11 @@ function renderTaskCard(task) {
               </button>
             ` : ''}
           </div>
-          <div class="task-content">${escapeHtml(task.comment || task.content || 'No comment')}</div>
-          ${task.selector ? `<div class="task-selector">${escapeHtml(task.selector)}</div>` : ''}
+          <div id="task-content-${index}" class="task-content">${escapeHtml(task.comment || task.content || 'No comment')}</div>
+          <div class="task-footer">
+            ${task.selector ? `<div class="task-selector">${escapeHtml(task.selector)}</div>` : ''}
+            <button type="button" class="task-expand" aria-controls="task-content-${index}" aria-expanded="false" hidden>Expand</button>
+          </div>
         </div>
         ${hasScreenshot ? `
           <div class="thumbnail-container" data-task-id="${escapeHtml(task.id)}" data-screenshot-path="${escapeHtml(task.screenshotPath)}">
