@@ -23,6 +23,33 @@ async function setup() {
 }
 afterEach(() => { dom?.window.close(); dom = null; });
 
+test('Add is enabled only while a project folder is connected', async () => {
+  const { context, document, read } = await setup();
+  const button = document.getElementById('tools-btn');
+  const menu = document.getElementById('tools-menu');
+  expect(button.disabled).toBe(true);
+
+  context.chrome.runtime.onMessage = { addListener: jest.fn() };
+  context.window.DrawbridgeAnnotationStore = { AnnotationStore: class { initialize() {} } };
+  context.window.moatPersistence = { removeProjectConnection: jest.fn(async () => {}) };
+  context.holdFolderAccess = jest.fn();
+  context.requestTasks = jest.fn(async () => {});
+  context.restoreFolder = jest.fn(async () => {});
+  context.setupEventListeners();
+  button.click();
+  expect(menu.classList.contains('hidden')).toBe(true);
+
+  await context.openFolder({}, 'Feedback', read('tabEpoch'));
+  expect(button.disabled).toBe(false);
+  button.click();
+  expect(menu.classList.contains('hidden')).toBe(false);
+
+  document.querySelector('[data-action="disconnect"]').click();
+  await new Promise(setImmediate);
+  expect(button.disabled).toBe(true);
+  expect(menu.classList.contains('hidden')).toBe(true);
+});
+
 test('renders task data as text rather than HTML', async () => {
   const { read, context, document } = await setup();
   const comment = '<img src=x onerror="alert(1)">';

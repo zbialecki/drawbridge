@@ -28,7 +28,6 @@
   --success-light: rgba(34, 197, 94, 0.1);
   --error: #dc2626;
   --error-light: rgba(239, 68, 68, 0.1);
-  --error-hover-bg: #fef2f2;
   --warning: #d97706;
   --shadow: rgba(0, 0, 0, 0.1);
   --shadow-lg: rgba(0, 0, 0, 0.15);
@@ -51,7 +50,6 @@
   --success-light: rgba(16, 185, 129, 0.1);
   --error: #f87171;
   --error-light: rgba(248, 113, 113, 0.1);
-  --error-hover-bg: #3b222a;
   --warning: #fbbf24;
   --shadow: rgba(0, 0, 0, 0.3);
   --shadow-lg: rgba(0, 0, 0, 0.4);
@@ -148,7 +146,7 @@ body {
   white-space: nowrap;
 }
 
-.header-btn:hover {
+.header-btn:hover:not(:disabled) {
   background: var(--bg-secondary);
   color: var(--text-secondary);
   border-color: var(--border-strong);
@@ -512,7 +510,8 @@ body {
   flex-shrink: 0;
 }
 
-.delete-btn {
+.delete-btn,
+.thumbnail-delete-btn {
   width: 24px;
   height: 24px;
   display: flex;
@@ -521,7 +520,7 @@ body {
   background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: 4px;
-  color: var(--text-muted);
+  color: var(--text-tertiary);
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s, color 0.15s, background-color 0.15s, border-color 0.15s;
@@ -529,19 +528,23 @@ body {
 }
 
 .task-card:hover .delete-btn,
-.delete-btn:focus-visible {
+.task-card:hover .thumbnail-delete-btn,
+.delete-btn:focus-visible,
+.thumbnail-delete-btn:focus-visible {
   opacity: 1;
 }
 
-.delete-btn:hover {
-  background: var(--error-hover-bg);
-  color: var(--error);
-  border-color: var(--error);
+.delete-btn:hover,
+.thumbnail-delete-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-color: var(--border-strong);
 }
 
-.delete-btn svg {
-  width: 14px;
-  height: 14px;
+.delete-btn svg,
+.thumbnail-delete-btn svg {
+  width: 16px;
+  height: 16px;
 }
 
 .task-content {
@@ -595,37 +598,13 @@ body {
   position: absolute;
   top: 4px;
   right: 4px;
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-muted);
-  cursor: pointer;
-  opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s, color 0.15s, background-color 0.15s, border-color 0.15s;
   box-shadow: 0 1px 3px var(--shadow);
 }
 
 .task-card:hover .thumbnail-delete-btn,
 .thumbnail-delete-btn:focus-visible {
-  opacity: 1;
   pointer-events: auto;
-}
-
-.thumbnail-delete-btn:hover {
-  background: var(--error-hover-bg);
-  color: var(--error);
-  border-color: var(--error);
-}
-
-.thumbnail-delete-btn svg {
-  width: 14px;
-  height: 14px;
 }
 
 /* Dropdown Menu */

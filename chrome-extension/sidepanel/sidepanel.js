@@ -78,7 +78,6 @@ async function handleTabChange(info) {
   tasks = [];
   thumbnailCache.clear();
   updateConnectionBanner();
-  updateToolsButtonState();
   renderTasks();
   updateBadges();
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -245,6 +244,7 @@ function setupEventListeners() {
         projectPath = '';
         tasks = [];
         thumbnailCache.clear();
+        updateConnectionBanner();
         await restoreFolder(tabEpoch);
         updateConnectionBanner();
         renderTasks();
@@ -539,6 +539,7 @@ async function requestTasks() {
 
 // UI Updates
 function updateConnectionBanner() {
+  updateToolsButtonState();
   if (isConnected) {
     connectionBanner.classList.remove('disconnected');
     connectionBanner.classList.add('connected');
@@ -816,7 +817,11 @@ function hideProjectMenu() {
 }
 
 function updateToolsButtonState() {
-  if (currentMode) {
+  toolsBtn.disabled = !isConnected;
+  if (!isConnected) {
+    toolsBtn.title = 'Connect a project to add feedback';
+    hideToolsMenu();
+  } else if (currentMode) {
     toolsBtn.title = currentMode === 'screen' ? 'Screen feedback open' :
       `${currentMode === 'comment' ? 'Comment' : 'Rectangle'} mode active`;
   } else {
